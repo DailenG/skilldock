@@ -57,7 +57,7 @@ const RELEASE_NOTE_COVERAGE_RULES = [
     id: "plugins",
     label: "插件管理与宿主运行时",
     pathPatterns: [
-      /^src-tauri\/src\/plugin_(?:manager|watcher)\.rs$/,
+      /^src-tauri\/src\/plugin_(?:manager|watcher|hosts)\.rs$/,
       /^src\/app\/routes\/plugins\.tsx$/,
       /^src\/features\/install\/components\/PluginInstallPanel\.tsx$/,
       /^src\/features\/skills\/utils\/plugin-cache\.ts$/,
