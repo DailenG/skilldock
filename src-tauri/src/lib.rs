@@ -16,6 +16,7 @@ mod library;
 mod marketplace_package;
 mod mcp_manager;
 mod models;
+mod plugin_hosts;
 mod plugin_manager;
 mod plugin_watcher;
 mod publishing_rules;

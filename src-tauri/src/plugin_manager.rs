@@ -331,6 +331,8 @@ enum PluginScanMode {
     Local,
     Startup,
     Refresh,
+    /// 安装回读只核对清单和组件，不跑 git、目录哈希或整树修改时间。
+    Install,
 }
 
 #[derive(Debug, Deserialize, Serialize, Default)]
@@ -706,6 +708,9 @@ fn list_installed_plugins_blocking_with_mode(
     plugins.extend(scan_claude_installed_plugins(scan_mode));
     plugins.extend(scan_cursor_installed_plugins(scan_mode));
     plugins.extend(scan_opencode_installed_plugins(scan_mode));
+    plugins.extend(crate::plugin_hosts::scan_opencode_config_plugins());
+    plugins.extend(crate::plugin_hosts::scan_lockfile_plugins("omp"));
+    plugins.extend(crate::plugin_hosts::scan_lockfile_plugins("pi"));
     dedupe_and_sort_plugins(plugins)
 }
 
@@ -938,7 +943,7 @@ fn install_selected_plugin_probes_blocking(
             }
         }
 
-        let installed_plugins = list_installed_plugins_blocking_with_mode(PluginScanMode::Local)?;
+        let installed_plugins = list_installed_plugins_blocking_with_mode(PluginScanMode::Install)?;
         let mut installed = Vec::new();
         for (host_tool, root) in installed_roots {
             if let Some(plugin) = installed_plugins.iter().find(|plugin| {
@@ -961,6 +966,12 @@ fn install_shared_plugin_probe_for_hosts(
     host_tools: Vec<String>,
     on_progress: Option<&CloneProgressCallback>,
 ) -> Result<Vec<(String, PathBuf)>, String> {
+    if probe.install_strategy == "opencode-config-plugin"
+        && host_tools.iter().all(|host_tool| host_tool == "opencode")
+    {
+        let installed_root = crate::plugin_hosts::install_opencode_config_plugin(home_dir, probe)?;
+        return Ok(vec![("opencode".to_string(), installed_root)]);
+    }
     let package = ensure_shared_plugin_package(probe, &host_tools, on_progress)?;
     let source_root = canonicalize_existing_dir(&package.plugin_root)?;
     let package_root =
@@ -1039,7 +1050,13 @@ fn set_plugin_enabled_blocking(
         "codex" => set_codex_plugin_enabled(&root_path, enabled),
         "claude-code" => set_claude_plugin_enabled(&root_path, enabled),
         "cursor" => set_cursor_plugin_enabled(&root_path, enabled),
+        "opencode" if crate::plugin_hosts::is_opencode_npm_root(Path::new(&root_path)) => {
+            crate::plugin_hosts::set_opencode_config_enabled(&root_path, enabled)
+        }
         "opencode" => set_opencode_plugin_enabled(&root_path, enabled),
+        "omp" | "pi" => {
+            crate::plugin_hosts::set_lockfile_plugin_enabled(&host_tool, &root_path, enabled)
+        }
         _ => Err(format!("不支持的插件宿主: {host_tool}")),
     }
 }
@@ -1188,7 +1205,10 @@ fn is_installed_plugin_preview_path(
         "opencode" => allowed_roots.extend([
             home_dir.join(".config/opencode/plugins"),
             home_dir.join(".skilldock/disabled-plugins/opencode"),
+            home_dir.join(".skilldock/opencode-npm"),
         ]),
+        "omp" => allowed_roots.push(home_dir.join(".omp/plugins")),
+        "pi" => allowed_roots.push(home_dir.join(".pi/plugins")),
         _ => return false,
     }
     if host_tool == "cursor" {
@@ -1557,6 +1577,10 @@ pub async fn get_plugin_update_preview(
 
 #[tauri::command]
 pub fn delete_plugin(host_tool: String, root_path: String) -> Result<(), String> {
+    if host_tool == "omp" || host_tool == "pi" {
+        return delete_lockfile_plugin(&host_tool, &root_path);
+    }
+
     let requested_root = Path::new(&root_path);
     if canonicalize_existing_dir(requested_root).is_err() {
         if host_tool != "codex" {
@@ -1576,7 +1600,11 @@ pub fn delete_plugin(host_tool: String, root_path: String) -> Result<(), String>
         "codex" => delete_codex_plugin(&root_path),
         "claude-code" => delete_claude_plugin(&root_path),
         "cursor" => delete_cursor_plugin(&root_path),
+        "opencode" if crate::plugin_hosts::is_opencode_npm_root(Path::new(&root_path)) => {
+            crate::plugin_hosts::delete_opencode_config_plugin(&root_path)
+        }
         "opencode" => delete_opencode_plugin(&root_path),
+        "omp" | "pi" => delete_lockfile_plugin(&host_tool, &root_path),
         _ => Err(format!("不支持的插件宿主: {host_tool}")),
     }
 }
@@ -1594,7 +1622,10 @@ fn is_host_plugin_storage_path(host_tool: &str, path: &Path) -> bool {
         "opencode" => vec![
             opencode_user_plugins_root(&home_dir),
             opencode_disabled_plugins_root(&home_dir),
+            home_dir.join(".skilldock/opencode-npm"),
         ],
+        "omp" => vec![home_dir.join(".omp/plugins")],
+        "pi" => vec![home_dir.join(".pi/plugins")],
         _ => Vec::new(),
     };
     let normalized_path = normalize_lexical_path(path);
@@ -2523,6 +2554,7 @@ fn scan_claude_installed_plugins(scan_mode: PluginScanMode) -> Vec<PluginSummary
                         &plugin_key,
                         install_entry,
                         scopes,
+                        scan_mode,
                     )
                 };
 
@@ -2546,6 +2578,7 @@ fn build_claude_marketplace_entry_summary(
     plugin_key: &str,
     install_entry: ClaudeInstalledPluginEntry,
     scopes: Vec<PluginScopeSummary>,
+    scan_mode: PluginScanMode,
 ) -> Option<PluginSummary> {
     let (plugin_name, marketplace_name) = split_enabled_plugin_key(plugin_key)?;
     let marketplace_manifest_path = home_dir
@@ -2561,11 +2594,15 @@ fn build_claude_marketplace_entry_summary(
         components = claude_marketplace_entry_components(&entry, &plugin_id);
     }
 
-    let modified_at = latest_modified_in_directory(&root)
-        .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
-        .map(|duration| duration.as_millis().to_string())
-        .or_else(|| file_modified_timestamp(&marketplace_manifest_path))
-        .unwrap_or_default();
+    let modified_at = if scan_mode == PluginScanMode::Install {
+        file_modified_timestamp(&marketplace_manifest_path).unwrap_or_default()
+    } else {
+        latest_modified_in_directory(&root)
+            .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis().to_string())
+            .or_else(|| file_modified_timestamp(&marketplace_manifest_path))
+            .unwrap_or_default()
+    };
     let last_scanned_at = current_timestamp_millis();
     let git_root = find_git_root(&root);
     let plugin_relative_path = git_root
@@ -2573,10 +2610,14 @@ fn build_claude_marketplace_entry_summary(
         .and_then(|repo_root| root.strip_prefix(repo_root).ok())
         .map(Path::to_path_buf)
         .unwrap_or_default();
-    let git_state = git_root
-        .as_ref()
-        .map(|repo_root| plugin_git_state(repo_root, &plugin_relative_path))
-        .unwrap_or_default();
+    let git_state = if scan_mode == PluginScanMode::Install {
+        PluginGitState::default()
+    } else {
+        git_root
+            .as_ref()
+            .map(|repo_root| plugin_git_state(repo_root, &plugin_relative_path))
+            .unwrap_or_default()
+    };
     let source_url = entry.source_url;
     let update_strategy = if git_root.is_some() {
         "git".to_string()
@@ -2964,6 +3005,16 @@ fn set_opencode_plugin_enabled(root_path: &str, enabled: bool) -> Result<PluginS
         PluginScanMode::Local,
     )
     .ok_or_else(|| "OpenCode 插件启用状态已写入，但重新读取插件状态失败".to_string())
+}
+
+fn delete_lockfile_plugin(host_tool: &str, root_path: &str) -> Result<(), String> {
+    let managed_root = crate::plugin_hosts::remove_lockfile_install(host_tool, root_path)?;
+    if let Some(managed_root) = managed_root {
+        if !managed_package_has_other_host_installations(&managed_root, host_tool) {
+            remove_path(&managed_root)?;
+        }
+    }
+    Ok(())
 }
 
 fn delete_opencode_plugin(root_path: &str) -> Result<(), String> {
@@ -3569,6 +3620,8 @@ fn managed_package_has_other_host_installations(
         ("claude-code", home_dir.join(".claude/plugins")),
         ("codex", home_dir.join(".codex/plugins/cache")),
         ("codex", home_dir.join(".codex/marketplaces")),
+        ("omp", home_dir.join(".omp/plugins/node_modules")),
+        ("pi", home_dir.join(".pi/plugins/node_modules")),
     ];
 
     host_roots.iter().any(|(host_tool, host_root)| {
@@ -4741,6 +4794,7 @@ fn build_claude_plugin_summary_after_enabled_change(
                         git_commit_sha: install_entry.git_commit_sha.clone(),
                     },
                     scopes,
+                    PluginScanMode::Local,
                 )
             };
 
@@ -4771,6 +4825,7 @@ fn plugin_manifest_path_for_host(host_tool: &str, plugin_root: &Path) -> Result<
         "cursor" => Ok(plugin_root.join(CURSOR_PLUGIN_MANIFEST)),
         "opencode" => first_opencode_plugin_entry(plugin_root)
             .ok_or_else(|| format!("目录缺少 OpenCode 插件入口: {}", plugin_root.display())),
+        "omp" | "pi" => Ok(plugin_root.join("package.json")),
         _ => Err(format!("不支持的插件宿主: {host_tool}")),
     }
 }
@@ -4943,7 +4998,14 @@ fn install_plugin_probe_for_host(
         "codex" => install_codex_plugin_probe(home_dir, &install_root, probe),
         "claude-code" => install_claude_plugin_probe(home_dir, &install_root, probe),
         "cursor" => install_cursor_plugin_probe(home_dir, &install_root, package_root, probe),
+        "opencode" if crate::plugin_hosts::prefers_opencode_config(probe, &install_root) => {
+            crate::plugin_hosts::install_opencode_config_plugin(home_dir, probe)
+        }
         "opencode" => install_opencode_plugin_probe(home_dir, &install_root, package_root, probe),
+        "omp" | "pi" => {
+            write_skilldock_plugin_source_metadata(&install_root, probe)?;
+            crate::plugin_hosts::install_lockfile_plugin(home_dir, &install_root, host_tool)
+        }
         _ => Err(format!("不支持的插件宿主: {host_tool}")),
     }
 }
@@ -7557,8 +7619,13 @@ pub(crate) fn reconcile_all_skilldock_runtime_copies() -> Result<(), String> {
 }
 
 fn remove_path(path: &Path) -> Result<(), String> {
-    let metadata = fs::symlink_metadata(path)
-        .map_err(|error| format!("读取路径元数据失败（{}）: {error}", path.display()))?;
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(format!("读取路径元数据失败（{}）: {error}", path.display()));
+        }
+    };
     if metadata.file_type().is_symlink() || metadata.is_file() {
         fs::remove_file(path)
             .map_err(|error| format!("删除文件失败（{}）: {error}", path.display()))
@@ -7639,6 +7706,9 @@ fn run_git_at(path: &Path, args: &[&str]) -> Result<String, String> {
 }
 
 fn ensure_plugin_host_tool_installed(host_tool: &str) -> Result<(), String> {
+    if matches!(host_tool, "omp" | "pi") {
+        return crate::plugin_hosts::ensure_lockfile_host_available(host_tool);
+    }
     let spec = plugin_host_detection_spec(host_tool)
         .ok_or_else(|| format!("不支持的插件宿主: {host_tool}"))?;
     if plugin_host_software_exists(&spec) {
@@ -8449,6 +8519,35 @@ fn plugin_source_metadata_from_package_identity(
     })
 }
 
+pub(crate) struct PluginSourceRecord {
+    pub source_url: String,
+    pub source_type: String,
+    pub source_ref: String,
+    pub source_revision: String,
+    pub is_git_repo: bool,
+}
+
+pub(crate) fn plugin_source_record(plugin_root: &Path) -> PluginSourceRecord {
+    let metadata = read_skilldock_plugin_source_metadata_with_package_fallback(plugin_root);
+    let source_type = resolve_plugin_source_type(plugin_root, metadata.as_ref(), "local");
+    PluginSourceRecord {
+        source_url: metadata
+            .as_ref()
+            .map(|metadata| metadata.source_url.clone())
+            .unwrap_or_default(),
+        source_type,
+        source_ref: metadata
+            .as_ref()
+            .map(|metadata| metadata.source_ref.clone())
+            .unwrap_or_default(),
+        source_revision: metadata
+            .as_ref()
+            .map(|metadata| metadata.source_revision.clone())
+            .unwrap_or_default(),
+        is_git_repo: find_git_root(plugin_root).is_some(),
+    }
+}
+
 fn resolve_plugin_source_type(
     plugin_root: &Path,
     source_metadata: Option<&SkillDockPluginSourceMetadata>,
@@ -8895,6 +8994,8 @@ fn host_tool_sort_order(host_tool: &str) -> usize {
         "codex" => 1,
         "cursor" => 2,
         "opencode" => 3,
+        "omp" => 4,
+        "pi" => 5,
         _ => 99,
     }
 }
@@ -9569,10 +9670,14 @@ fn build_installed_plugin_summary_with_manifest(
                 .map(Path::to_path_buf)
         })
         .unwrap_or_default();
-    let git_state = git_root
-        .as_ref()
-        .map(|repo_root| plugin_git_state(repo_root, &plugin_relative_path))
-        .unwrap_or_default();
+    let git_state = if scan_mode == PluginScanMode::Install {
+        PluginGitState::default()
+    } else {
+        git_root
+            .as_ref()
+            .map(|repo_root| plugin_git_state(repo_root, &plugin_relative_path))
+            .unwrap_or_default()
+    };
     let plugin_id = build_plugin_id(&descriptor.host_tool, &manifest, &root);
     let components = collect_asset_components(&root, &plugin_id);
     let modified_at = plugin_modified_timestamp(&root, &descriptor.manifest_path, scan_mode);
@@ -10090,6 +10195,9 @@ fn enrich_plugin_summary_with_update_state(
     plugin_root: &Path,
     plugin_relative_path: &Path,
 ) -> PluginSummary {
+    if scan_mode == PluginScanMode::Install {
+        return plugin;
+    }
     match plugin.update_strategy.as_str() {
         "git" => enrich_git_plugin_summary(plugin, scan_mode, git_root, plugin_relative_path),
         "hash" => enrich_hash_plugin_summary(plugin, scan_mode, plugin_root, plugin_relative_path),
@@ -11414,17 +11522,55 @@ fn detect_remote_github_plugin_candidates(
             }
         }
     }
+    let package_plugin =
+        fetch_remote_package_plugin(&owner_repo, &plugin_root, source_spec.branch.as_deref());
     if detected.is_empty() {
-        return Ok(None);
+        return Ok(package_plugin.map(|info| {
+            vec![remote_package_probe(
+                source_url,
+                source_spec.branch.as_deref(),
+                &owner_repo,
+                &plugin_root,
+                hint_host_tool.as_deref(),
+                &info,
+            )]
+        }));
     }
+    let has_opencode_entrypoint = detected.iter().any(|(tool, _)| *tool == "opencode");
     let selected_index = hint_host_tool
         .as_deref()
         .and_then(|hint| detected.iter().position(|(tool, _)| *tool == hint))
         .unwrap_or(0);
-    let compatible_host_tools = detected
+    let mut compatible_host_tools = detected
         .iter()
         .map(|(tool, _)| (*tool).to_string())
         .collect::<Vec<_>>();
+    if let Some(info) = package_plugin.as_ref() {
+        for host in info.compatible_hosts() {
+            if !compatible_host_tools
+                .iter()
+                .any(|existing| existing == &host)
+            {
+                compatible_host_tools.push(host);
+            }
+        }
+    }
+    let hint = hint_host_tool.as_deref();
+    let selected_from_package = hint.filter(|hint| {
+        !detected.iter().any(|(tool, _)| tool == hint)
+            && compatible_host_tools.iter().any(|host| host == hint)
+    });
+    if let Some(selected_tool) = selected_from_package {
+        let info = package_plugin.expect("package plugin host was merged from package.json");
+        return Ok(Some(vec![remote_package_probe(
+            source_url,
+            source_spec.branch.as_deref(),
+            &owner_repo,
+            &plugin_root,
+            Some(selected_tool),
+            &info,
+        )]));
+    }
     let (selected_tool, selected_manifest_path) = &detected[selected_index];
     let selected_manifest = if *selected_tool == "opencode" {
         PluginManifest {
@@ -11443,15 +11589,12 @@ fn detect_remote_github_plugin_candidates(
             source_spec.branch.as_deref(),
         )?
     };
-    let warning = if detected.len() > 1 {
-        Some(format!(
-            "发现多个官方插件清单，已优先使用 {}",
-            selected_tool
-        ))
+    let warning = if compatible_host_tools.len() > 1 {
+        Some(format!("发现多个插件宿主，已优先使用 {}", selected_tool))
     } else {
         None
     };
-    Ok(Some(vec![build_remote_plugin_probe(
+    let mut probe = build_remote_plugin_probe(
         &owner_repo,
         source_url,
         source_spec.branch.as_deref(),
@@ -11461,7 +11604,83 @@ fn detect_remote_github_plugin_candidates(
         compatible_host_tools,
         selected_tool,
         warning,
-    )?]))
+    )?;
+    probe.install_strategy = install_strategy_for_selected_host(
+        selected_tool,
+        has_opencode_entrypoint,
+        package_plugin.as_ref(),
+    )
+    .to_string();
+    Ok(Some(vec![probe]))
+}
+
+fn fetch_remote_package_plugin(
+    owner_repo: &str,
+    plugin_root: &Path,
+    git_ref: Option<&str>,
+) -> Option<crate::plugin_hosts::PackagePluginInfo> {
+    let entry =
+        fetch_github_file_entry(owner_repo, &plugin_root.join("package.json"), git_ref).ok()?;
+    let bytes = if entry.encoding == "base64" || entry.content.contains('\n') {
+        decode_github_base64(&entry.content).ok()?
+    } else if entry.content.trim_start().starts_with('{') {
+        entry.content.into_bytes()
+    } else {
+        return None;
+    };
+    let package = serde_json::from_slice::<JsonValue>(&bytes).ok()?;
+    crate::plugin_hosts::inspect_package_value(&package)
+}
+
+fn remote_package_probe(
+    source_url: &str,
+    git_ref: Option<&str>,
+    owner_repo: &str,
+    plugin_root: &Path,
+    hint_host_tool: Option<&str>,
+    info: &crate::plugin_hosts::PackagePluginInfo,
+) -> PluginProbeResult {
+    let compatible_host_tools = info.compatible_hosts();
+    let selected_tool = hint_host_tool
+        .filter(|hint| compatible_host_tools.iter().any(|host| host == hint))
+        .map(|hint| hint.to_string())
+        .unwrap_or_else(|| {
+            compatible_host_tools
+                .first()
+                .cloned()
+                .unwrap_or_else(|| "unknown".to_string())
+        });
+    let plugin_root_label = if plugin_root.as_os_str().is_empty() {
+        format!("/skilldock-uncloned/{owner_repo}")
+    } else {
+        plugin_root.to_string_lossy().to_string()
+    };
+    PluginProbeResult {
+        tool: selected_tool.clone(),
+        compatible_host_tools,
+        kind: "plugin-repo".to_string(),
+        manifest_name: info.package_name.clone(),
+        name: info.package_name.clone(),
+        description: info.description.clone(),
+        plugin_root: plugin_root_label,
+        repo_root: String::new(),
+        plugin_relative_path: normalize_relative_path(plugin_root),
+        manifest_path: plugin_root
+            .join("package.json")
+            .to_string_lossy()
+            .to_string(),
+        marketplace_manifest_path: String::new(),
+        components: Vec::new(),
+        source_type: "git".to_string(),
+        source_url: source_url.trim().to_string(),
+        source_ref: git_ref.unwrap_or_default().to_string(),
+        is_git_repo: true,
+        git_root: String::new(),
+        confidence: "high".to_string(),
+        install_strategy: install_strategy_for_selected_host(&selected_tool, false, Some(info))
+            .to_string(),
+        warnings: Vec::new(),
+    }
 }
 
 fn canonicalize_existing_dir(path: &Path) -> Result<PathBuf, String> {
@@ -11502,39 +11721,123 @@ fn detect_plugin_repo(
         .iter()
         .filter(|(_, path)| path.is_file())
         .collect::<Vec<_>>();
+    let package_plugin = crate::plugin_hosts::inspect_package_dir(root);
 
     if detected.is_empty() {
-        return None;
+        return package_plugin
+            .as_ref()
+            .and_then(|info| package_only_probe(root, git_root, hint_host_tool, info));
     }
 
-    let selected = hint_host_tool
-        .and_then(|hint| detected.iter().find(|(tool, _)| *tool == hint).copied())
-        .unwrap_or(detected[0]);
-    let warnings = if detected.len() > 1 {
-        vec![format!("发现多个官方插件清单，已优先使用 {}", selected.0)]
+    let mut compatible_host_tools = detected
+        .iter()
+        .map(|(tool, _)| (*tool).to_string())
+        .collect::<Vec<_>>();
+    if let Some(info) = package_plugin.as_ref() {
+        for host in info.compatible_hosts() {
+            if !compatible_host_tools
+                .iter()
+                .any(|existing| existing == &host)
+            {
+                compatible_host_tools.push(host);
+            }
+        }
+    }
+    let selected_tool = hint_host_tool
+        .filter(|hint| compatible_host_tools.iter().any(|host| host == hint))
+        .unwrap_or(detected[0].0);
+    let selected_manifest = detected
+        .iter()
+        .find(|(tool, _)| *tool == selected_tool)
+        .map(|(_, path)| path.clone())
+        .unwrap_or_else(|| detected[0].1.clone());
+    let official_description = read_plugin_manifest(selected_manifest.as_path())
+        .map(|manifest| plugin_description(&manifest))
+        .unwrap_or_default();
+    let description = if matches!(selected_tool, "omp" | "pi") {
+        package_plugin
+            .as_ref()
+            .map(|info| info.description.clone())
+            .filter(|description| !description.is_empty())
+            .unwrap_or(official_description)
+    } else {
+        official_description
+    };
+    let warnings = if compatible_host_tools.len() > 1 {
+        vec![format!("发现多个插件宿主，已优先使用 {selected_tool}")]
     } else {
         Vec::new()
     };
+    let has_opencode_entrypoint = detected.iter().any(|(tool, _)| *tool == "opencode");
 
     Some(build_probe_result(ProbeBuildArgs {
-        tool: selected.0,
-        compatible_host_tools: detected
-            .iter()
-            .map(|(tool, _)| (*tool).to_string())
-            .collect(),
+        tool: selected_tool,
+        compatible_host_tools,
         kind: "plugin-repo",
-        description: read_plugin_manifest(selected.1.as_path())
-            .map(|manifest| plugin_description(&manifest))
-            .unwrap_or_default(),
+        description,
         root,
-        manifest_path: Some(selected.1.as_path()),
+        manifest_path: Some(selected_manifest.as_path()),
         marketplace_manifest_path: None,
         components: collect_asset_components(root, ""),
         git_root,
         confidence: "high",
-        install_strategy: install_strategy_for_plugin_tool(selected.0),
+        install_strategy: install_strategy_for_selected_host(
+            selected_tool,
+            has_opencode_entrypoint,
+            package_plugin.as_ref(),
+        ),
         warnings,
     }))
+}
+
+fn package_only_probe(
+    root: &Path,
+    git_root: Option<&Path>,
+    hint_host_tool: Option<&str>,
+    info: &crate::plugin_hosts::PackagePluginInfo,
+) -> Option<PluginProbeResult> {
+    let compatible_host_tools = info.compatible_hosts();
+    if compatible_host_tools.is_empty() || info.package_name.trim().is_empty() {
+        return None;
+    }
+    let selected_tool = hint_host_tool
+        .filter(|hint| compatible_host_tools.iter().any(|host| host == hint))
+        .map(|hint| hint.to_string())
+        .unwrap_or_else(|| compatible_host_tools[0].clone());
+    let manifest_path = root.join("package.json");
+    Some(build_probe_result(ProbeBuildArgs {
+        tool: selected_tool.as_str(),
+        compatible_host_tools,
+        kind: "plugin-repo",
+        description: info.description.clone(),
+        root,
+        manifest_path: Some(manifest_path.as_path()),
+        marketplace_manifest_path: None,
+        components: collect_asset_components(root, ""),
+        git_root,
+        confidence: "high",
+        install_strategy: install_strategy_for_selected_host(
+            selected_tool.as_str(),
+            false,
+            Some(info),
+        ),
+        warnings: Vec::new(),
+    }))
+}
+
+fn install_strategy_for_selected_host(
+    host_tool: &str,
+    has_opencode_entrypoint: bool,
+    package_plugin: Option<&crate::plugin_hosts::PackagePluginInfo>,
+) -> &'static str {
+    match host_tool {
+        "omp" | "pi" => "lockfile-plugin-link",
+        "opencode" if has_opencode_entrypoint => "opencode-plugin-link",
+        "opencode" if package_plugin.is_some_and(|info| info.opencode_npm) => {
+            "opencode-config-plugin"
+        }
+        _ => install_strategy_for_plugin_tool(host_tool),
+    }
 }
 
 fn detect_marketplace_root(root: &Path, git_root: Option<&Path>) -> Option<PluginProbeResult> {
@@ -11635,7 +11938,10 @@ fn probe_display_name(root: &Path, manifest_path: Option<&Path>) -> String {
         })
 }
 
-fn collect_asset_components(root: &Path, owner_plugin_id: &str) -> Vec<PluginComponentSummary> {
+pub(crate) fn collect_asset_components(
+    root: &Path,
+    owner_plugin_id: &str,
+) -> Vec<PluginComponentSummary> {
     let mut components = Vec::new();
     collect_named_asset_dirs(
         root,
@@ -11664,6 +11970,7 @@ fn collect_asset_components(root: &Path, owner_plugin_id: &str) -> Vec<PluginCom
     collect_entry_assets(root, "rules", "rule", owner_plugin_id, &mut components);
     collect_entry_assets(root, "hooks", "hook", owner_plugin_id, &mut components);
     collect_mcp_assets(root, owner_plugin_id, &mut components);
+    crate::plugin_hosts::append_extra_components(root, owner_plugin_id, &mut components);
     components.sort_by(|left, right| {
         left.asset_type
             .cmp(&right.asset_type)
@@ -12264,7 +12571,7 @@ fn normalize_relative_path(path: &Path) -> String {
 fn normalize_host_tool(value: Option<&str>) -> Option<String> {
     let normalized = value?.trim().to_ascii_lowercase();
     match normalized.as_str() {
-        "claude-code" | "cursor" | "codex" | "opencode" => Some(normalized),
+        "claude-code" | "cursor" | "codex" | "opencode" | "omp" | "pi" => Some(normalized),
         _ => None,
     }
 }
@@ -21405,6 +21712,130 @@ source = "{}"
                 .expect("collect restored OpenCode links")
                 .is_empty()
         );
+
+        match previous_home {
+            Some(value) => env::set_var("HOME", value),
+            None => env::remove_var("HOME"),
+        }
+        let _ = fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn probes_opencode_npm_package_without_plugin_entrypoint() {
+        let temp_dir = temp_test_dir("opencode-npm-probe");
+        let plugin_root = temp_dir.join("oh-my-opencode-slim");
+        fs::create_dir_all(&plugin_root).expect("create npm plugin");
+        fs::write(
+            plugin_root.join("package.json"),
+            r#"{"name":"oh-my-opencode-slim","description":"Slim OpenCode","keywords":["opencode-plugin"]}"#,
+        )
+        .expect("write package.json");
+
+        let probe = super::probe_plugin_root(&plugin_root, None);
+        assert_eq!(probe.tool, "opencode");
+        assert_eq!(probe.install_strategy, "opencode-config-plugin");
+        assert_eq!(probe.name, "oh-my-opencode-slim");
+        let _ = fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn probes_pi_package_and_merges_official_manifest_hosts() {
+        let temp_dir = temp_test_dir("pi-omp-probe");
+        let plugin_root = temp_dir.join("demo-pi");
+        fs::create_dir_all(plugin_root.join(".claude-plugin")).expect("manifest dir");
+        fs::create_dir_all(plugin_root.join("extensions")).expect("extensions");
+        fs::write(
+            plugin_root.join(".claude-plugin/plugin.json"),
+            r#"{"name":"official-demo","description":"Official"}"#,
+        )
+        .expect("plugin.json");
+        fs::write(
+            plugin_root.join("package.json"),
+            r#"{"name":"demo-pi","description":"From package","pi":{"extensions":["./extensions"]}}"#,
+        )
+        .expect("package.json");
+
+        let hinted = super::probe_plugin_root(&plugin_root, Some("pi".to_string()));
+        assert_eq!(hinted.tool, "pi");
+        assert_eq!(hinted.install_strategy, "lockfile-plugin-link");
+        assert_eq!(hinted.manifest_name, "official-demo");
+        assert_eq!(hinted.description, "From package");
+        assert!(hinted
+            .compatible_host_tools
+            .iter()
+            .any(|host| host == "claude-code"));
+        assert!(hinted
+            .compatible_host_tools
+            .iter()
+            .any(|host| host == "omp"));
+        assert!(hinted
+            .components
+            .iter()
+            .any(|component| component.asset_type == "hook"));
+        let _ = fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn deletes_managed_clone_after_last_omp_host_is_removed() {
+        let _guard = TEST_ENV_LOCK.lock().expect("env lock");
+        let temp_dir = temp_test_dir("lockfile-delete");
+        let previous_home = env::var_os("HOME");
+        env::set_var("HOME", &temp_dir);
+        fs::create_dir_all(temp_dir.join(".omp")).expect("omp home");
+        let managed = temp_dir.join(".skilldock/plugins/demo");
+        fs::create_dir_all(managed.join("extensions")).expect("managed plugin");
+        fs::write(
+            managed.join("package.json"),
+            r#"{"name":"demo-pi","version":"1.0.0","pi":{"extensions":["./extensions"]}}"#,
+        )
+        .expect("package.json");
+
+        let link = crate::plugin_hosts::install_lockfile_plugin(&temp_dir, &managed, "omp")
+            .expect("install omp plugin");
+        delete_plugin("omp".to_string(), link.to_string_lossy().to_string())
+            .expect("delete omp plugin");
+
+        match previous_home {
+            Some(value) => env::set_var("HOME", value),
+            None => env::remove_var("HOME"),
+        }
+        assert!(!link.exists());
+        assert!(!managed.exists());
+        let _ = fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn deletes_pi_plugin_after_managed_directory_is_already_gone() {
+        let _guard = TEST_ENV_LOCK.lock().expect("env lock");
+        let temp_dir = temp_test_dir("lockfile-delete-broken-pi");
+        let previous_home = env::var_os("HOME");
+        env::set_var("HOME", &temp_dir);
+        fs::create_dir_all(temp_dir.join(".pi")).expect("pi home");
+        let managed = temp_dir.join(".skilldock/plugins/pi-superpowers");
+        fs::create_dir_all(managed.join("extensions")).expect("managed plugin");
+        fs::write(
+            managed.join("package.json"),
+            r#"{"name":"@weiping/pi-superpowers","version":"5.1.0","description":"Pi powers","pi":{"extensions":["./extensions"]}}"#,
+        )
+        .expect("package.json");
+
+        let link = crate::plugin_hosts::install_lockfile_plugin(&temp_dir, &managed, "pi")
+            .expect("install pi plugin");
+        fs::remove_dir_all(&managed).expect("remove managed clone");
+        assert!(fs::symlink_metadata(&link).is_ok());
+
+        let visible = crate::plugin_hosts::scan_lockfile_plugins("pi");
+        assert_eq!(visible.len(), 1);
+        delete_plugin("pi".to_string(), visible[0].root_path.clone()).expect("delete broken pi");
+
+        let settings =
+            fs::read_to_string(temp_dir.join(".pi/agent/settings.json")).expect("read pi settings");
+        let lock = fs::read_to_string(temp_dir.join(".pi/plugins/pi-plugins.lock.json"))
+            .expect("read pi lock");
+        assert!(!settings.contains("pi-superpowers"));
+        assert!(!lock.contains("pi-superpowers"));
+        assert!(crate::plugin_hosts::scan_lockfile_plugins("pi").is_empty());
+        assert!(fs::symlink_metadata(&link).is_err());
 
         match previous_home {
             Some(value) => env::set_var("HOME", value),

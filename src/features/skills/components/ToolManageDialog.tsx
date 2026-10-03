@@ -36,7 +36,7 @@ function sortCapabilityRows(left: CapabilityRow, right: CapabilityRow) {
 }
 
 function isManagedPluginHost(toolId: string): toolId is PluginHostTool {
-  return toolId === "claude-code" || toolId === "codex" || toolId === "cursor" || toolId === "opencode";
+  return toolId === "claude-code" || toolId === "codex" || toolId === "cursor" || toolId === "opencode" || toolId === "omp" || toolId === "pi";
 }
 
 function getPluginInstanceKey(plugin: PluginSummary) {

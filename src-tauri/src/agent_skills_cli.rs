@@ -969,9 +969,92 @@ pub fn update_global_skill(name: &str) -> Result<(), String> {
     run_explicit_cli(&["update", name, "-g", "-y"])
 }
 
+pub fn cli_can_address_skill_name(name: &str) -> bool {
+    cli_sanitized_skill_name(name) == name
+}
+
 pub fn remove_global_skill(name: &str) -> Result<(), String> {
-    run_explicit_cli(&["remove", name, "-g", "-y"])?;
+    validate_skill_name(name)?;
+    if cli_can_address_skill_name(name) {
+        run_explicit_cli(&["remove", name, "-g", "-y"])?;
+    } else {
+        // skills CLI 会把非 ASCII、空格和大写名称收成另一个目录名，并且在没删到原目录时仍退出 0。
+        remove_unaddressable_global_skill(name)?;
+    }
     verify_global_skill_removed(name)
+}
+
+fn cli_name_sanitizer() -> &'static regex::Regex {
+    static SANITIZER: OnceLock<regex::Regex> = OnceLock::new();
+    SANITIZER
+        .get_or_init(|| regex::Regex::new(r"[^a-z0-9._]+").expect("Agent CLI skill name sanitizer"))
+}
+
+fn cli_sanitized_skill_name(name: &str) -> String {
+    let lowercase = name.to_lowercase();
+    let hyphenated = cli_name_sanitizer().replace_all(&lowercase, "-");
+    let trimmed = hyphenated.trim_matches(|character: char| character == '.' || character == '-');
+    let sanitized = trimmed.chars().take(255).collect::<String>();
+    if sanitized.is_empty() {
+        "unnamed-skill".to_string()
+    } else {
+        sanitized
+    }
+}
+
+fn remove_unaddressable_global_skill(name: &str) -> Result<(), String> {
+    let root = global_skill_root()?;
+    let entry_path = root.join(name);
+    if entry_path.parent() != Some(root.as_path()) {
+        return Err("Agent CLI Skill 名称无效".into());
+    }
+    match fs::symlink_metadata(&entry_path) {
+        Ok(metadata) if metadata.file_type().is_symlink() || metadata.is_file() => {
+            fs::remove_file(&entry_path).map_err(|error| {
+                format!(
+                    "删除 Agent CLI Skill 入口失败（{}）: {error}",
+                    entry_path.display()
+                )
+            })?;
+        }
+        Ok(_) => {
+            fs::remove_dir_all(&entry_path).map_err(|error| {
+                format!(
+                    "删除 Agent CLI Skill 目录失败（{}）: {error}",
+                    entry_path.display()
+                )
+            })?;
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(format!(
+                "读取 Agent CLI Skill 入口失败（{}）: {error}",
+                entry_path.display()
+            ));
+        }
+    }
+    remove_global_lock_entry(name)
+}
+
+fn remove_global_lock_entry(name: &str) -> Result<(), String> {
+    let lock_path = home_dir()?.join(".agents/.skill-lock.json");
+    let contents = match fs::read_to_string(&lock_path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(format!("读取 Agent Skills CLI 锁文件失败: {error}")),
+    };
+    let mut lock = serde_json::from_str::<serde_json::Value>(&contents)
+        .map_err(|error| format!("解析 Agent Skills CLI 锁文件失败: {error}"))?;
+    if let Some(skills) = lock
+        .get_mut("skills")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        skills.remove(name);
+    }
+    let rendered = serde_json::to_string_pretty(&lock)
+        .map_err(|error| format!("序列化 Agent Skills CLI 锁文件失败: {error}"))?;
+    fs::write(&lock_path, format!("{rendered}\n"))
+        .map_err(|error| format!("写入 Agent Skills CLI 锁文件失败: {error}"))
 }
 
 fn verify_global_skill_removed(name: &str) -> Result<(), String> {
@@ -1619,6 +1702,72 @@ exit 1
 
         removed.expect("remove Agent CLI skill through CLI");
         assert!(incomplete.is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn remove_global_skill_deletes_non_ascii_directory_without_calling_cli() {
+        let _guard = crate::workspace::TEST_ENV_LOCK.lock().expect("env lock");
+        let temp_home = env::temp_dir().join(format!(
+            "skilldock-agent-unicode-remove-test-{}",
+            std::process::id()
+        ));
+        let fake_bin = temp_home.join("bin");
+        let skill_name = "一键创建网站";
+        let skill_dir = temp_home.join(".agents/skills").join(skill_name);
+        let cli_marker = temp_home.join("cli-called");
+        fs::create_dir_all(&fake_bin).expect("create fake executable path");
+        fs::create_dir_all(&skill_dir).expect("create unicode Agent CLI skill");
+        fs::write(skill_dir.join("SKILL.md"), "# demo\n").expect("write skill");
+        fs::write(
+            temp_home.join(".agents/.skill-lock.json"),
+            format!(
+                r#"{{"version":3,"skills":{{"{skill_name}":{{"sourceType":"local","skillFolderHash":"hash"}}}}}}"#
+            ),
+        )
+        .expect("write lock");
+        let fake_skills = fake_bin.join("skills");
+        fs::write(
+            &fake_skills,
+            format!("#!/bin/sh\ntouch {}\nexit 1\n", cli_marker.display()),
+        )
+        .expect("write fake skills");
+        fs::set_permissions(&fake_skills, fs::Permissions::from_mode(0o755))
+            .expect("make fake skills executable");
+
+        let original_home = env::var_os("HOME");
+        let original_path = env::var_os("PATH");
+        let next_path = original_path
+            .as_ref()
+            .map(|path| {
+                let mut paths = env::split_paths(path).collect::<Vec<_>>();
+                paths.insert(0, fake_bin);
+                env::join_paths(paths).expect("join fake executable path")
+            })
+            .unwrap_or_else(|| temp_home.join("bin").into_os_string());
+        unsafe {
+            env::set_var("HOME", &temp_home);
+            env::set_var("PATH", next_path);
+        }
+
+        let removed = remove_global_skill(skill_name);
+        let lock_contents =
+            fs::read_to_string(temp_home.join(".agents/.skill-lock.json")).expect("read lock");
+
+        match original_home {
+            Some(value) => unsafe { env::set_var("HOME", value) },
+            None => unsafe { env::remove_var("HOME") },
+        }
+        match original_path {
+            Some(value) => unsafe { env::set_var("PATH", value) },
+            None => unsafe { env::remove_var("PATH") },
+        }
+
+        removed.expect("remove unicode Agent CLI skill locally");
+        assert!(!skill_dir.exists());
+        assert!(!cli_marker.exists());
+        assert!(!lock_contents.contains(skill_name));
+        let _ = fs::remove_dir_all(temp_home);
     }
 
     #[cfg(unix)]

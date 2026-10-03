@@ -589,7 +589,12 @@ function normalizeSkillSummaryList(skills: LegacySkillSummary[]): SkillSummary[]
 }
 
 function isPluginHostTool(tool: string | undefined): tool is PluginHostTool {
-  return tool === "claude-code" || tool === "cursor" || tool === "codex" || tool === "opencode";
+  return tool === "claude-code"
+    || tool === "cursor"
+    || tool === "codex"
+    || tool === "opencode"
+    || tool === "omp"
+    || tool === "pi";
 }
 
 function normalizePluginHostTool(tool: string | undefined): PluginHostTool {
@@ -798,6 +803,8 @@ function normalizePluginProbeResult(probe: LegacyPluginProbeResult): PluginProbe
       || probe.installStrategy === "claude-plugin-dir"
       || probe.installStrategy === "cursor-registration"
       || probe.installStrategy === "opencode-plugin-link"
+      || probe.installStrategy === "opencode-config-plugin"
+      || probe.installStrategy === "lockfile-plugin-link"
       || probe.installStrategy === "unsupported"
         ? probe.installStrategy
         : "unsupported",

@@ -2276,8 +2276,8 @@ test("shows host icons in the trailing host badge and collapses the rest into +N
   const statusBadges = rowButton.querySelectorAll(".status-badge");
   const hostCoverageBadge = statusBadges[statusBadges.length - 1];
 
-  expect(hostCoverageBadge?.querySelectorAll(".plugins-page__host-coverage-item")).toHaveLength(5);
-  expect(within(hostCoverageBadge as HTMLElement).getByText("+3")).toBeInTheDocument();
+  expect(hostCoverageBadge?.querySelectorAll(".plugins-page__host-coverage-item")).toHaveLength(6);
+  expect(within(hostCoverageBadge as HTMLElement).getByText("+2")).toBeInTheDocument();
 });
 
 test("aggregates launchdarkly aliases into one shared plugin card", async () => {
@@ -3034,7 +3034,9 @@ test("shows plugin delete failures in the global notification stack", async () =
   await userEvent.click(screen.getByRole("button", { name: "删除 ecc 插件" }));
   await userEvent.click(screen.getByRole("button", { name: "确认删除 ecc 插件" }));
 
-  expect(await screen.findByRole("alert")).toHaveTextContent("删除插件失败，请检查宿主配置和本地目录权限。");
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "删除插件失败，请检查宿主配置和本地目录权限。 permission denied",
+  );
   expect(screen.getByText("ecc")).toBeInTheDocument();
 
   deleteSpy.mockRestore();

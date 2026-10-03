@@ -9,9 +9,9 @@ import { useNotifications } from "@/app/notifications";
 import {
   fetchInstalledPlugins,
   fetchGitRepoBranches,
+  fetchLocalPluginStates,
   installSelectedPluginProbes,
   probePluginSourceCandidates,
-  refreshPluginStates,
   shouldUseFixtureData,
 } from "@/features/skills/api/skill-client";
 import { useSkillWorkspace } from "@/features/skills/state/skill-workspace";
@@ -72,6 +72,8 @@ const pluginHostOptions: { key: PluginHostTool; label: string }[] = [
   { key: "claude-code", label: "Claude Code" },
   { key: "cursor", label: "Cursor" },
   { key: "opencode", label: "OpenCode" },
+  { key: "omp", label: "OMP" },
+  { key: "pi", label: "Pi" },
 ];
 const componentSummaryTypes: { key: PluginAssetType; label: string }[] = [
   { key: "skill", label: "skill" },
@@ -517,6 +519,7 @@ export function PluginInstallPanel() {
   const [isInstalling, setIsInstalling] = useState(false);
   const [cloneProgressMessage, setCloneProgressMessage] = useState<string | null>(null);
   const prevSourceRef = useRef(initial.source);
+  const installedPluginRefreshGeneration = useRef(0);
 
   // 同步状态到 module-level 缓存
   useEffect(() => {
@@ -783,18 +786,24 @@ export function PluginInstallPanel() {
         fallbackMessage: t("install.plugin.error.installFailed"),
       });
     } finally {
-      void refreshWorkspace({ showRefreshing: false });
-      try {
-        const nextInstalledPlugins = await refreshPluginStates();
-        if (!shouldUseFixtureData()) {
-          cachePlugins(nextInstalledPlugins);
-        }
-        setInstalledPlugins(nextInstalledPlugins);
-      } catch (error) {
-        console.warn("Failed to refresh installed plugins after install:", error);
-      }
       setIsInstalling(false);
       setCloneProgressMessage(null);
+      void refreshWorkspace({ showRefreshing: false });
+      const refreshGeneration = installedPluginRefreshGeneration.current + 1;
+      installedPluginRefreshGeneration.current = refreshGeneration;
+      void fetchLocalPluginStates()
+        .then((nextInstalledPlugins) => {
+          if (installedPluginRefreshGeneration.current !== refreshGeneration) {
+            return;
+          }
+          if (!shouldUseFixtureData()) {
+            cachePlugins(nextInstalledPlugins);
+          }
+          setInstalledPlugins(nextInstalledPlugins);
+        })
+        .catch((error) => {
+          console.warn("Failed to refresh installed plugins after install:", error);
+        });
     }
   }
 

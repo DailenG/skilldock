@@ -297,6 +297,75 @@ test("installs OpenCode plugins with OpenCode selected as the host", async () =>
   installSpy.mockRestore();
 });
 
+test("installs OMP plugins with OMP selected as the host", async () => {
+  const sourceUrl = "https://github.com/example/demo-omp-plugin";
+  const branchSpy = vi.spyOn(skillClient, "fetchGitRepoBranches").mockResolvedValue([
+    { name: "main", isDefault: true, isSelected: true },
+  ]);
+  vi.spyOn(skillClient, "fetchInstalledPlugins").mockResolvedValue([]);
+  const installSpy = vi.spyOn(skillClient, "installSelectedPluginProbes").mockResolvedValue([]);
+  const toolConfigSpy = vi.spyOn(skillClient, "fetchToolConfigs").mockResolvedValue(
+    toolConfigFixtures.map((tool) => (
+      tool.id === "omp" || tool.id === "pi"
+        ? { ...tool, statusLabel: "已安装", isEnabled: true }
+        : tool
+    )),
+  );
+  const probeSpy = vi.spyOn(skillClient, "probePluginSourceCandidates").mockResolvedValue([{
+    tool: "omp",
+    compatibleHostTools: ["omp", "pi"],
+    kind: "plugin-repo",
+    manifestName: "demo-omp-plugin",
+    name: "demo-omp-plugin",
+    description: "Demo OMP plugin",
+    pluginRoot: "/tmp/demo-omp-plugin",
+    repoRoot: "/tmp/demo-omp-plugin",
+    pluginRelativePath: "",
+    manifestPath: "/tmp/demo-omp-plugin/package.json",
+    marketplaceManifestPath: "",
+    components: [],
+    sourceType: "git",
+    sourceUrl,
+    sourceRef: "main",
+    isGitRepo: true,
+    gitRoot: "/tmp/demo-omp-plugin",
+    confidence: "high",
+    installStrategy: "lockfile-plugin-link",
+    warnings: [],
+  }]);
+
+  render(<App />);
+  await clickNavInstall();
+  await userEvent.click(screen.getByRole("tab", { name: "Plugin" }));
+  await userEvent.type(screen.getByRole("textbox", { name: "Git 仓库地址" }), sourceUrl);
+  await waitFor(() => {
+    expect(screen.getByRole("combobox", { name: "Git 分支" })).toHaveAttribute("data-value", "main");
+  });
+  await userEvent.click(screen.getByRole("button", { name: "识别插件" }));
+
+  expect(await screen.findByText("Demo OMP plugin")).toBeInTheDocument();
+  expect(screen.getByRole("button", {
+    name: "取消选择 OMP 作为 demo-omp-plugin 安装宿主",
+  })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", {
+    name: "取消选择 Pi 作为 demo-omp-plugin 安装宿主",
+  })).toHaveAttribute("aria-pressed", "true");
+
+  await userEvent.click(screen.getByRole("button", { name: "安装到选中宿主" }));
+
+  await waitFor(() => {
+    expect(installSpy).toHaveBeenCalledWith({
+      probes: [expect.objectContaining({ tool: "omp", installStrategy: "lockfile-plugin-link" })],
+      hostTools: expect.arrayContaining(["omp", "pi"]),
+    });
+  });
+
+  branchSpy.mockRestore();
+  probeSpy.mockRestore();
+  installSpy.mockRestore();
+  toolConfigSpy.mockRestore();
+});
+
 test("marks already installed plugin hosts and still allows installing remaining hosts", async () => {
   const sourceUrl = "https://git.example.com/example-org/example-repo";
   const branchSpy = vi.spyOn(skillClient, "fetchGitRepoBranches").mockResolvedValue([
@@ -669,7 +738,7 @@ test("keeps plugin probes visible and stops blocking on workspace refresh after 
     warnings: [],
   }]);
   const installSpy = vi.spyOn(skillClient, "installSelectedPluginProbes").mockResolvedValue([]);
-  const refreshSpy = vi.spyOn(skillClient, "refreshPluginStates").mockResolvedValue([]);
+  const refreshSpy = vi.spyOn(skillClient, "fetchLocalPluginStates").mockResolvedValue([]);
   const workspaceRefreshSpy = vi
     .spyOn(skillClient, "fetchToolConfigs")
     .mockResolvedValueOnce(toolConfigFixtures)
@@ -1127,7 +1196,7 @@ test("updates the shared plugin cache right after plugin install completes", asy
   ]);
   const fixtureSpy = vi.spyOn(skillClient, "shouldUseFixtureData").mockReturnValue(false);
   const fetchInstalledPluginsSpy = vi.spyOn(skillClient, "fetchInstalledPlugins").mockResolvedValue([]);
-  const refreshPluginStatesSpy = vi.spyOn(skillClient, "refreshPluginStates").mockResolvedValue([installedPlugin]);
+  const refreshPluginStatesSpy = vi.spyOn(skillClient, "fetchLocalPluginStates").mockResolvedValue([installedPlugin]);
   const installSpy = vi.spyOn(skillClient, "installSelectedPluginProbes").mockResolvedValue([]);
 
   render(<App />);
@@ -1232,7 +1301,7 @@ test("refreshes installed hosts after a plugin install partially fails", async (
   const fixtureSpy = vi.spyOn(skillClient, "shouldUseFixtureData").mockReturnValue(false);
   const fetchInstalledPluginsSpy = vi.spyOn(skillClient, "fetchInstalledPlugins").mockResolvedValue([]);
   const refreshPluginStatesSpy = vi
-    .spyOn(skillClient, "refreshPluginStates")
+    .spyOn(skillClient, "fetchLocalPluginStates")
     .mockResolvedValue([partiallyInstalledPlugin]);
   const installSpy = vi
     .spyOn(skillClient, "installSelectedPluginProbes")
@@ -1337,7 +1406,7 @@ test("shows newly installed plugin before the follow-up plugin refresh resolves"
   ]);
   const fixtureSpy = vi.spyOn(skillClient, "shouldUseFixtureData").mockReturnValue(false);
   const fetchInstalledPluginsSpy = vi.spyOn(skillClient, "fetchInstalledPlugins").mockResolvedValue([]);
-  const refreshPluginStatesSpy = vi.spyOn(skillClient, "refreshPluginStates").mockImplementationOnce(
+  const refreshPluginStatesSpy = vi.spyOn(skillClient, "fetchLocalPluginStates").mockImplementationOnce(
     () =>
       new Promise<PluginSummary[]>((resolve) => {
         deferredRefresh.resolve = resolve;

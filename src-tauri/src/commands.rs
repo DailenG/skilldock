@@ -8518,7 +8518,12 @@ fn delete_skill_blocking(skill_name: &str, skill_path: Option<&str>) -> Result<(
     let skill = installed_skills[skill_index].clone();
 
     match skill.instance.management_owner.as_str() {
-        "agent-skills-cli" => crate::agent_skills_cli::remove_global_skill(&skill.name)?,
+        "agent-skills-cli" => {
+            if !crate::agent_skills_cli::cli_can_address_skill_name(&skill.name) {
+                remove_matching_skill_links_from_all_tools(&skill)?;
+            }
+            crate::agent_skills_cli::remove_global_skill(&skill.name)?;
+        }
         "external" => {
             let entry_path = PathBuf::from(&skill.instance.entry_path);
             fs::symlink_metadata(&entry_path)

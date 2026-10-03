@@ -11,7 +11,7 @@ export type ManagedSkillOwnerFilter = "all" | Exclude<SkillManagementOwner, "ext
 export type SourceType = "github" | "gitlab" | "gitee" | "well-known" | "local" | "marketplace";
 export type MarketplaceSourceSite = "skills.sh" | "skillsmp" | "skillhub" | "clawhub";
 export type McpMarketplaceSourceSite = "MCP.Directory";
-export type PluginHostTool = "claude-code" | "cursor" | "codex" | "opencode";
+export type PluginHostTool = "claude-code" | "cursor" | "codex" | "opencode" | "omp" | "pi";
 export type PluginKind = "plugin-repo" | "marketplace-root" | "standalone-assets" | "unknown";
 export type PluginProbeKind = PluginKind;
 export type PluginProbeConfidence = "high" | "medium" | "low";
@@ -20,6 +20,8 @@ export type PluginInstallStrategy =
   | "claude-plugin-dir"
   | "cursor-registration"
   | "opencode-plugin-link"
+  | "opencode-config-plugin"
+  | "lockfile-plugin-link"
   | "unsupported";
 export type PluginSourceType = "git" | "local" | "marketplace";
 export type PluginUpdateMode = "auto" | "unsupported";

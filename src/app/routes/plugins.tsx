@@ -130,6 +130,8 @@ const pluginTabs: { key: PluginTabKey; label: string }[] = [
   { key: "codex", label: "Codex" },
   { key: "cursor", label: "Cursor" },
   { key: "opencode", label: "OpenCode" },
+  { key: "omp", label: "OMP" },
+  { key: "pi", label: "Pi" },
 ];
 const componentSections: ComponentSection[] = [
   { key: "skill", title: "Skills", summaryLabel: "skill" },
@@ -149,7 +151,7 @@ const primaryComponentSummaryTypes: PluginAssetType[] = [
 ];
 const FALLBACK_OPEN_TOOL_ID = "finder";
 const maxVisibleComponentsPerSection = 5;
-const maxVisibleHostCoverageEntries = 5;
+const maxVisibleHostCoverageEntries = 6;
 const PLUGIN_LIBRARY_CHANGE_DEBOUNCE_MS = 500;
 const PLUGIN_MUTATION_REFRESH_DELAY_MS = PLUGIN_LIBRARY_CHANGE_DEBOUNCE_MS * 3;
 const AUTO_PLUGIN_STATE_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
@@ -1133,8 +1135,14 @@ function canTogglePlugin(plugin: PluginSummary) {
       || plugin.hostTool === "claude-code"
       || plugin.hostTool === "cursor"
       || plugin.hostTool === "opencode"
+      || plugin.hostTool === "omp"
+      || plugin.hostTool === "pi"
     )
   );
+}
+
+function canDeletePlugin(_plugin: PluginSummary) {
+  return true;
 }
 
 function getPluginToggleActionLabel(
@@ -1748,6 +1756,8 @@ export function PluginsRoute(props: PluginsRouteProps = {}) {
     { key: "codex", label: "Codex" },
     { key: "cursor", label: "Cursor" },
     { key: "opencode", label: "OpenCode" },
+    { key: "omp", label: "OMP" },
+    { key: "pi", label: "Pi" },
   ];
   const pluginSourceOptions: PluginSourceOption[] = localizedPluginTabs.map((tab) => ({
     ...tab,
@@ -2422,6 +2432,7 @@ export function PluginsRoute(props: PluginsRouteProps = {}) {
   const updatePluginStates = selectedPluginStates.filter((item) => (
     item.updateTargets.length > 0 && !item.blocksBatchUpdate
   ));
+  const deletablePluginStates = selectedPluginStates.filter((item) => canDeletePlugin(item.plugin));
   const isBatchBusy = batchAction !== "";
 
   useEffect(() => {
@@ -2995,8 +3006,15 @@ export function PluginsRoute(props: PluginsRouteProps = {}) {
       handleExpandedChange(pluginKey, false);
     } catch (error) {
       console.warn("Failed to delete plugin", error);
+      const errorDetail = error instanceof Error
+        ? error.message
+        : typeof error === "string"
+          ? error
+          : "";
       notify({
-        message: t("plugins.error.delete"),
+        message: errorDetail
+          ? `${t("plugins.error.delete")} ${errorDetail}`
+          : t("plugins.error.delete"),
         tone: "error",
       });
     } finally {
@@ -3149,14 +3167,14 @@ export function PluginsRoute(props: PluginsRouteProps = {}) {
   }
 
   async function handleBatchDeletePlugins() {
-    if (isBatchBusy || selectedPluginStates.length === 0) {
+    if (isBatchBusy || deletablePluginStates.length === 0) {
       return;
     }
     setIsBatchDeleteConfirming(false);
     setBatchAction("delete");
     const deletedPluginKeys = new Set<string>();
     try {
-      const results = await Promise.allSettled(selectedPluginStates.map(async (item) => {
+      const results = await Promise.allSettled(deletablePluginStates.map(async (item) => {
         for (const target of item.targets) {
           await deletePlugin({
             pluginId: target.id,
@@ -3180,7 +3198,7 @@ export function PluginsRoute(props: PluginsRouteProps = {}) {
       });
       finishPluginBatch(
         t("batch.action.delete"),
-        selectedPluginStates.map((item) => getPluginInstanceKey(item.plugin)),
+        deletablePluginStates.map((item) => getPluginInstanceKey(item.plugin)),
         results,
       );
     } finally {
@@ -3416,13 +3434,13 @@ export function PluginsRoute(props: PluginsRouteProps = {}) {
               isBusy: batchAction === "update",
               onClick: () => void handleBatchUpdatePlugins(),
             }] : []),
-            {
+            ...(deletablePluginStates.length > 0 ? [{
               key: "delete",
-              label: t("batch.action.deleteCount", { count: selectedPlugins.length }),
+              label: t("batch.action.deleteCount", { count: deletablePluginStates.length }),
               tone: "danger" as const,
               isBusy: batchAction === "delete",
               onClick: () => setIsBatchDeleteConfirming(true),
-            },
+            }] : []),
             ...(togglePluginStates.length > 0 ? [{
               key: "toggle",
               label: t(shouldBatchEnablePlugins ? "batch.action.enableCount" : "batch.action.disableCount", {
@@ -3694,7 +3712,9 @@ export function PluginsRoute(props: PluginsRouteProps = {}) {
                     onClick: () => void handlePluginOpen(plugin),
                     disabled: isDeleting || !plugin.rootPath.trim(),
                   },
-                  isDeleteConfirming
+                  ...(canDeletePlugin(plugin)
+                    ? [
+                      isDeleteConfirming
                     ? {
                         key: "delete-confirm",
                         label: t("plugins.action.delete.confirm"),
@@ -3719,6 +3739,8 @@ export function PluginsRoute(props: PluginsRouteProps = {}) {
                         onClick: () => void handlePluginDelete(plugin),
                     disabled: isDeleting || isUpdatePending,
                       },
+                    ]
+                    : []),
                 ]}
               />
             );
@@ -3728,10 +3750,10 @@ export function PluginsRoute(props: PluginsRouteProps = {}) {
       <BatchDeleteDialog
         cancelLabel={t("batch.cancel")}
         confirmLabel={t("batch.delete.confirm")}
-        description={t("batch.delete.description.plugin", { count: selectedPlugins.length })}
+        description={t("batch.delete.description.plugin", { count: deletablePluginStates.length })}
         isBusy={batchAction === "delete"}
         isOpen={isBatchDeleteConfirming}
-        title={t("batch.delete.title.plugin", { count: selectedPlugins.length })}
+        title={t("batch.delete.title.plugin", { count: deletablePluginStates.length })}
         onCancel={() => setIsBatchDeleteConfirming(false)}
         onConfirm={() => void handleBatchDeletePlugins()}
       />
