@@ -1,4 +1,5 @@
 import type { SkillSummary } from "@/features/skills/state/skill-store";
+import { getCurrentTranslationLanguage, tx } from "@/app/i18n";
 
 export type SkillGroup = {
   id: string;
@@ -52,6 +53,10 @@ function isLocalSourceLabel(sourceLabel: string) {
   return LOCAL_SOURCE_LABELS.has(sourceLabel.trim().toLocaleLowerCase());
 }
 
+function localSourceLabel(options: GroupLabelOptions) {
+  return options.localLabel ?? tx(getCurrentTranslationLanguage(), "skills.source.local");
+}
+
 function formatOwnerRepoLabel(owner: string, repo: string) {
   return `${owner}-${repo}`.replace(/\//g, "-");
 }
@@ -102,7 +107,7 @@ function resolveWellKnownSourceHost(skill: SkillSummary) {
 
 function resolveFallbackGroupLabel(skill: SkillSummary, options: GroupLabelOptions) {
   if (isLocalSourceUrl(skill.sourceUrl) || isLocalSourceLabel(skill.sourceLabel)) {
-    return options.localLabel ?? "本地";
+    return localSourceLabel(options);
   }
 
   return skill.sourceLabel.replace(/\//g, "-");
@@ -123,11 +128,11 @@ function resolveInitialGroupLabel(skill: SkillSummary, options: GroupLabelOption
   }
 
   if (skill.sourceType === "local") {
-    return options.localLabel ?? "本地";
+    return localSourceLabel(options);
   }
 
   if (isLocalSourceUrl(skill.sourceUrl)) {
-    return options.localLabel ?? "本地";
+    return localSourceLabel(options);
   }
 
   const parsedRepository = parseRepository(skill.sourceUrl);

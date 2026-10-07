@@ -14,6 +14,7 @@ import {
   type SkillHubPublishableSkill,
   type SkillHubPublishableSkillsSnapshot,
 } from "@/features/skillhub-publishing/publishing-client";
+import { getCurrentTranslationLanguage, tx } from "@/app/i18n";
 import {
   CACHED_SNAPSHOT_BACKGROUND_REFRESH_DELAY_MS,
   type PublishingPlatformAdapter,
@@ -168,7 +169,10 @@ function findPublishedSkill(
       && (!remoteSkillId || skill.remoteSkillId === remoteSkillId || !skill.remoteSkillId)
   ));
   if (!publishedSkill) {
-    throw new Error("SkillHub 发布成功后未找到对应的本地 Skill，请刷新后确认发布状态。");
+    throw new Error(tx(
+      getCurrentTranslationLanguage(),
+      "publishing.error.skillHubMissingAfterPublish",
+    ));
   }
   return publishedSkill;
 }
@@ -207,7 +211,10 @@ export const skillHubPublishingAdapter: PublishingPlatformAdapter = {
     const importedSnapshot = await fetchSkillHubSkills();
     const importedSkill = importedSnapshot.skills.find((item) => item.name === skill.name);
     if (!importedSkill) {
-      throw new Error("Skill 导入成功，但尚未出现在 SkillDock 托管列表中，请刷新后再发布。");
+      throw new Error(tx(
+        getCurrentTranslationLanguage(),
+        "publishing.error.importedSkillMissing",
+      ));
     }
     await publishSkillHub({
       skillName: importedSkill.name,

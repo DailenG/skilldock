@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { BusinessError, normalizeErrorMessage } from "@/app/errors";
+import { tx } from "@/app/i18n";
 import {
   detectPreferredAppLanguage,
   connectGithubToken as connectGithubTokenRequest,
@@ -430,13 +431,11 @@ function restoreDeletedSkill(
 }
 
 function getMarketplaceSearchFailedMessage(language: AppLanguage) {
-  return language === "en" ? "Failed to search sources" : "搜索安装源失败";
+  return tx(language, "marketplace.error.search");
 }
 
 function getMarketplaceLoadFailedMessage(language: AppLanguage, sourceSite: MarketplaceSourceSite) {
-  return language === "en"
-    ? `Failed to load skills from ${sourceSite}`
-    : `加载 ${sourceSite} 技能失败`;
+  return tx(language, "marketplace.error.load", { source: sourceSite });
 }
 
 function getPartialSkillUpdateFailedMessage(input: {
@@ -445,11 +444,11 @@ function getPartialSkillUpdateFailedMessage(input: {
   failed: number;
   names: string;
 }) {
-  if (input.language === "en") {
-    return `Updated ${input.updated} skills, but ${input.failed} failed: ${input.names}`;
-  }
-
-  return `已更新 ${input.updated} 个 skill，${input.failed} 个更新失败：${input.names}`;
+  return tx(input.language, "skill.bulkUpdate.partial", {
+    updated: input.updated,
+    failed: input.failed,
+    names: input.names,
+  });
 }
 
 function removeImportedCandidate(
@@ -1633,7 +1632,7 @@ export function SkillWorkspaceProvider({ children }: SkillWorkspaceProviderProps
           }))
           .filter((item) => item.result.status === "rejected");
         if (failedUpdates.length > 0) {
-          const failedSkillNames = failedUpdates.map((item) => item.skillName).join("、");
+          const failedSkillNames = failedUpdates.map((item) => item.skillName).join(tx(language, "app.list.separator"));
           throw new BusinessError(getPartialSkillUpdateFailedMessage({
             language,
             updated: updatedSkills.length,

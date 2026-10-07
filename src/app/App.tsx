@@ -88,6 +88,7 @@ type RouteDefinition = {
 type RouteErrorBoundaryProps = {
   children: ReactNode;
   route: RouteKey;
+  t: (key: Parameters<typeof tx>[1]) => string;
 };
 
 type RouteErrorBoundaryState = {
@@ -129,14 +130,14 @@ class RouteErrorBoundary extends Component<
     if (this.state.error) {
       return (
         <div className="panel-card empty-state">
-          <h3>页面加载失败</h3>
-          <p>{this.state.error.message || "发生未知错误"}</p>
+          <h3>{this.props.t("app.error.loadFailed")}</h3>
+          <p>{this.state.error.message || this.props.t("app.error.unknown")}</p>
           <button
             className="secondary-button"
             type="button"
             onClick={() => this.setState({ error: null })}
           >
-            重试
+            {this.props.t("app.action.retry")}
           </button>
         </div>
       );
@@ -1462,7 +1463,7 @@ function AppContent() {
           aria-hidden="true"
         />
         <section ref={pageContentRef} className="page-content">
-          <RouteErrorBoundary route={activeRoute}>
+          <RouteErrorBoundary route={activeRoute} t={t}>
             {renderRoute(
               activeRoute,
               activeSkillSourceId,

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslate } from "@/app/i18n";
 import { fetchCliTools } from "@/features/skills/api/skill-client";
 import {
   ToolListPageShell,
@@ -22,6 +23,7 @@ function ImportIcon() {
 }
 
 export function CliRoute() {
+  const { t } = useTranslate();
   const [cliTools, setCliTools] = useState<CliToolSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -43,7 +45,7 @@ export function CliRoute() {
       setErrorMessage("");
     } catch (error) {
       console.warn("Failed to load CLI tools", error);
-      setErrorMessage("读取 CLI 列表失败，请稍后重试。");
+      setErrorMessage(t("cli.error.load"));
     } finally {
       if (isSilent) {
         setIsRefreshing(false);
@@ -66,7 +68,7 @@ export function CliRoute() {
       } catch (error) {
         console.warn("Failed to load CLI tools", error);
         if (!shouldIgnore) {
-          setErrorMessage("读取 CLI 列表失败，请稍后重试。");
+          setErrorMessage(t("cli.error.load"));
         }
       } finally {
         if (!shouldIgnore) {
@@ -105,17 +107,17 @@ export function CliRoute() {
     <ToolListPageShell
       isLoading={isLoading}
       isRefreshing={isRefreshing}
-      emptyTitle="还没有检测到 CLI 包。"
-      emptyDescription="这里只展示类似飞书 CLI 这种 CLI 本体和官方 skills 一起管理、一起更新的 CLI 包。"
+      emptyTitle={t("cli.empty.title")}
+      emptyDescription={t("cli.empty.description")}
       errorMessage={errorMessage}
       itemsCount={filteredCliTools.length}
-      loadingText="正在加载 CLI..."
-      refreshLabel="刷新"
-      refreshBusyLabel="刷新中..."
-      toolbarAriaLabel="CLI 工具栏"
+      loadingText={t("cli.loading")}
+      refreshLabel={t("cli.refresh")}
+      refreshBusyLabel={t("cli.refreshing")}
+      toolbarAriaLabel={t("cli.toolbar.aria")}
       searchValue={query}
-      searchPlaceholder="搜索 CLI、命令或 Skill"
-      searchAriaLabel="搜索 CLI 包"
+      searchPlaceholder={t("cli.search.placeholder")}
+      searchAriaLabel={t("cli.search.aria")}
       onRefresh={() => loadCliTools({ silent: true })}
       onSearchChange={setQuery}
       toolbarSlotId="tool-list-header-toolbar-slot"
@@ -128,7 +130,7 @@ export function CliRoute() {
           <span aria-hidden="true" className="skills-toolbar-button__icon">
             <ImportIcon />
           </span>
-          <span>扫描导入</span>
+          <span>{t("cli.scanImport")}</span>
         </button>
       )}
     >
@@ -137,39 +139,39 @@ export function CliRoute() {
           key={cliTool.id}
           rowId={cliTool.id}
           name={cliTool.name}
-          subtitle={`${cliTool.description || cliTool.command}${cliTool.bundledSkills.length > 0 ? ` · 绑定 ${cliTool.bundledSkills.length} 个 skills` : ""}`}
-          badges={[{ label: cliTool.statusLabel || "已识别", tone: "neutral" }]}
+          subtitle={`${cliTool.description || cliTool.command}${cliTool.bundledSkills.length > 0 ? ` · ${t("cli.row.boundSkills", { count: cliTool.bundledSkills.length })}` : ""}`}
+          badges={[{ label: cliTool.statusLabel || t("cli.status.recognized"), tone: "neutral" }]}
           expanded={expandedId === cliTool.id}
           onExpandedChange={(expanded, summaryElement) => handleExpandedChange(cliTool.id, expanded, summaryElement)}
           details={(
             <div className="tool-list-row__detail-grid">
               <div>
-                <dt>命令</dt>
-                <dd>{cliTool.command || "未知"}</dd>
+                <dt>{t("cli.field.command")}</dt>
+                <dd>{cliTool.command || t("cli.value.unknown")}</dd>
               </div>
               <div>
-                <dt>状态</dt>
-                <dd>{cliTool.statusLabel || "未知"}</dd>
+                <dt>{t("cli.field.status")}</dt>
+                <dd>{cliTool.statusLabel || t("cli.value.unknown")}</dd>
               </div>
               <div>
-                <dt>可执行路径</dt>
-                <dd title={cliTool.executablePath}>{cliTool.executablePath || "未知"}</dd>
+                <dt>{t("cli.field.executablePath")}</dt>
+                <dd title={cliTool.executablePath}>{cliTool.executablePath || t("cli.value.unknown")}</dd>
               </div>
               <div>
-                <dt>更新命令</dt>
-                <dd>{cliTool.updateCommand || "未知"}</dd>
+                <dt>{t("cli.field.updateCommand")}</dt>
+                <dd>{cliTool.updateCommand || t("cli.value.unknown")}</dd>
               </div>
               <div>
-                <dt>更新策略</dt>
-                <dd>{cliTool.updateStrategy === "self-only" ? "仅更新 CLI 本体" : "更新 CLI 时联动更新官方 skills"}</dd>
+                <dt>{t("cli.field.updateStrategy")}</dt>
+                <dd>{cliTool.updateStrategy === "self-only" ? t("cli.updateStrategy.selfOnly") : t("cli.updateStrategy.withSkills")}</dd>
               </div>
               <div>
-                <dt>绑定 skills</dt>
-                <dd>{cliTool.bundledSkills.join(" · ") || "暂无识别结果"}</dd>
+                <dt>{t("cli.field.bundledSkills")}</dt>
+                <dd>{cliTool.bundledSkills.join(" · ") || t("cli.empty.bundledSkills")}</dd>
               </div>
               <div>
-                <dt>描述</dt>
-                <dd>{cliTool.description || "暂无描述"}</dd>
+                <dt>{t("cli.field.description")}</dt>
+                <dd>{cliTool.description || t("cli.empty.descriptionValue")}</dd>
               </div>
             </div>
           )}
