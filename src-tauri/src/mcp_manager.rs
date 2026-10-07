@@ -3291,6 +3291,9 @@ fn normalize_record(mut record: McpServerRecord) -> Result<McpServerRecord, Stri
         record.name = record.id.clone();
     }
     record.description = record.description.trim().to_string();
+    if is_generated_mcp_description(&record.description) {
+        record.description.clear();
+    }
     record.source_url = record.source_url.trim().to_string();
     record.tools_discovered_at = record.tools_discovered_at.trim().to_string();
     record.tools_discovery_error = record.tools_discovery_error.trim().to_string();
@@ -4438,18 +4441,18 @@ fn repository_parts_from_path(host: &str, path: &str) -> Option<(String, String,
 
 fn stored_mcp_description(record: &McpServerRecord) -> String {
     let stored_description = record.description.trim();
-    if !stored_description.is_empty() {
+    if !stored_description.is_empty() && !is_generated_mcp_description(stored_description) {
         return stored_description.to_string();
     }
 
-    explicit_mcp_description(&record.server).unwrap_or_else(|| fallback_mcp_description(record))
+    explicit_mcp_description(&record.server).unwrap_or_default()
 }
 
 async fn enrich_mcp_record_metadata(record: &mut McpServerRecord, client: Option<&Client>) {
     let has_explicit_description = explicit_mcp_description(&record.server).is_some();
     let needs_description = !has_explicit_description
         && (record.description.trim().is_empty()
-            || record.description == fallback_mcp_description(record)
+            || is_generated_mcp_description(&record.description)
             || npm_package_from_mcp_server(&record.server).is_some());
     let needs_source_url = record.source_url.trim().is_empty();
     if !needs_description && !needs_source_url {
@@ -4498,28 +4501,25 @@ async fn resolve_mcp_metadata(
         }
     }
 
-    if metadata.description.trim().is_empty() {
-        metadata.description = fallback_mcp_description(record);
-    }
     metadata.description = metadata.description.trim().to_string();
     metadata.source_url = metadata.source_url.trim().to_string();
     metadata
 }
 
-fn fallback_mcp_description(record: &McpServerRecord) -> String {
-    let command_label = mcp_command_label(&record.server);
-    let source_label = if command_label.is_empty() {
-        record.name.as_str()
-    } else {
-        command_label.as_str()
-    };
-
-    match mcp_server_type(&record.server).as_str() {
-        "stdio" => format!("通过本地命令 {source_label} 启动的 MCP 服务。"),
-        "sse" => format!("连接到 {source_label} 的远程 SSE MCP 服务。"),
-        "http" => format!("连接到 {source_label} 的远程 HTTP MCP 服务。"),
-        _ => format!("用于向已安装工具同步 {} MCP 配置。", record.name),
-    }
+fn is_generated_mcp_description(description: &str) -> bool {
+    let description = description.trim();
+    [
+        ("通过本地命令 ", " 启动的 MCP 服务。"),
+        ("连接到 ", " 的远程 SSE MCP 服务。"),
+        ("连接到 ", " 的远程 HTTP MCP 服务。"),
+        ("用于向已安装工具同步 ", " MCP 配置。"),
+        ("MCP service started with local command ", "."),
+        ("Remote SSE MCP service connected to ", "."),
+        ("Remote HTTP MCP service connected to ", "."),
+        ("MCP config for syncing ", " to installed tools."),
+    ]
+    .iter()
+    .any(|(prefix, suffix)| description.starts_with(prefix) && description.ends_with(suffix))
 }
 
 fn mcp_metadata_client() -> Option<Client> {
@@ -9782,6 +9782,61 @@ mcpServers:
         assert_eq!(normalized.tools, Vec::<McpServerToolStatus>::new());
         assert_eq!(normalized.tools_discovery_error, "");
         assert_eq!(normalized.tools_discovered_at, "2026/5/15 14:16:46");
+    }
+
+    #[test]
+    fn is_generated_mcp_description_matches_legacy_templates() {
+        let record = opencode_test_record("test-server", Vec::new(), Vec::new());
+        let command_label = mcp_command_label(&record.server);
+        let descriptions = [
+            "通过本地命令 previous-command 启动的 MCP 服务。",
+            "连接到 https://legacy.example/sse 的远程 SSE MCP 服务。",
+            "连接到 https://legacy.example/mcp 的远程 HTTP MCP 服务。",
+            "用于向已安装工具同步 legacy-server MCP 配置。",
+            "MCP service started with local command previous-command.",
+            "Remote SSE MCP service connected to https://legacy.example/sse.",
+            "Remote HTTP MCP service connected to https://legacy.example/mcp.",
+            "MCP config for syncing legacy-server to installed tools.",
+        ];
+
+        assert_ne!(command_label, "previous-command");
+        for description in descriptions {
+            assert!(
+                is_generated_mcp_description(description),
+                "expected generated description: {description}"
+            );
+        }
+        assert!(is_generated_mcp_description(
+            "  通过本地命令 previous-command 启动的 MCP 服务。  "
+        ));
+        assert!(!is_generated_mcp_description("我的 MCP 服务"));
+        assert!(!is_generated_mcp_description(""));
+    }
+
+    #[test]
+    fn stored_mcp_description_ignores_generated_descriptions() {
+        let mut record = opencode_test_record("test-server", Vec::new(), Vec::new());
+        assert_eq!(stored_mcp_description(&record), "");
+
+        record.description = "通过本地命令 previous-command 启动的 MCP 服务。".to_string();
+        assert_eq!(stored_mcp_description(&record), "");
+
+        record.server["description"] = json!("Custom");
+        assert_eq!(stored_mcp_description(&record), "Custom");
+
+        record.server.as_object_mut().unwrap().remove("description");
+        record.description = "我的 MCP 服务".to_string();
+        assert_eq!(stored_mcp_description(&record), "我的 MCP 服务");
+    }
+
+    #[test]
+    fn normalize_record_clears_generated_mcp_description() {
+        let mut record = opencode_test_record("test-server", Vec::new(), Vec::new());
+        record.description = "通过本地命令 previous-command 启动的 MCP 服务。".to_string();
+
+        let normalized = normalize_record(record).expect("normalize record");
+
+        assert_eq!(normalized.description, "");
     }
 
     #[test]
