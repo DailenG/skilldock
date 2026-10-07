@@ -104,10 +104,10 @@ describe("groupSkillsBySource", () => {
         sourceUrl: "file:///Users/wanghuan/.skilldock/skills/local-skill",
         sourceLabel: "Users/wanghuan",
       }),
-    ]);
+    ], { localLabel: "Local" });
 
     expect(groups).toHaveLength(1);
-    expect(groups[0]?.label).toBe("本地");
+    expect(groups[0]?.label).toBe("Local");
   });
 
   it("merges legacy local labels into the localized local group", () => {
@@ -128,10 +128,10 @@ describe("groupSkillsBySource", () => {
         sourceUrl: "",
         sourceLabel: "Local Import",
       }),
-    ]);
+    ], { localLabel: "Local" });
 
     expect(groups).toHaveLength(1);
-    expect(groups[0]?.label).toBe("本地");
+    expect(groups[0]?.label).toBe("Local");
     expect(groups[0]?.skills.map((skill) => skill.name)).toEqual([
       "localized-local-skill",
       "legacy-local-skill",

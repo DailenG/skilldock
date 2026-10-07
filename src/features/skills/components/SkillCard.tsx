@@ -318,7 +318,7 @@ export function SkillCard({
   const gridSummaryTools = enabledTools.slice(0, GRID_SUMMARY_TOOL_LIMIT);
   const gridSummaryToolExtraCount = enabledTools.length - gridSummaryTools.length;
   const summaryToolsLabel = enabledTools.length > 0
-    ? t("skill.card.enabledTools", { tools: enabledTools.map((tool) => tool.name).join("、") })
+    ? t("skill.card.enabledTools", { tools: enabledTools.map((tool) => tool.name).join(t("app.list.separator")) })
     : t("skill.card.enabledToolsNone");
   const enabledToolsCountLabel = enabledTools.length > 0
     ? t("skill.card.enabledCount", { count: enabledTools.length })
@@ -603,7 +603,7 @@ export function SkillCard({
           action: t(enabled ? "skill.tools.action.enable" : "skill.tools.action.disable"),
           success: toolNames.length - failedToolNames.length,
           failed: failedToolNames.length,
-          names: failedToolNames.join("、"),
+          names: failedToolNames.join(t("app.list.separator")),
         })), {
           operation: "toggle_all_skill_tools_from_card",
           fallbackMessage: t("skill.tools.error.toggle"),

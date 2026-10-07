@@ -1,3 +1,4 @@
+import { getCurrentTranslationLanguage, tx } from "@/app/i18n";
 import type {
   PublishingPlatformRegistration,
   PublishingPlatformRegistrationModule,
@@ -17,7 +18,9 @@ function loadPublishingPlatformRegistrations(): PublishingPlatformRegistration[]
   for (const registration of registrations) {
     const platformId = registration.adapter.platform.id;
     if (platformIds.has(platformId)) {
-      throw new Error(`发布平台注册重复：${platformId}`);
+      throw new Error(tx(getCurrentTranslationLanguage(), "publishing.error.duplicatePlatform", {
+        platform: platformId,
+      }));
     }
     platformIds.add(platformId);
   }
@@ -30,7 +33,7 @@ export function getDefaultPublishingPlatformRegistration(): PublishingPlatformRe
   const registration = publishingPlatformRegistrations.find((item) => item.isDefault)
     ?? publishingPlatformRegistrations[0];
   if (!registration) {
-    throw new Error("未配置发布平台。请至少注册一个发布平台。");
+    throw new Error(tx(getCurrentTranslationLanguage(), "publishing.error.noPlatform"));
   }
   return registration;
 }

@@ -3,8 +3,8 @@ import { formatSkillSourceLabel } from "@/features/skills/utils/skill-source";
 
 describe("formatSkillSourceLabel", () => {
   it("maps local install labels to local", () => {
-    expect(formatSkillSourceLabel("本地导入")).toBe("本地");
-    expect(formatSkillSourceLabel("本地安装")).toBe("本地");
+    expect(formatSkillSourceLabel("本地导入")).toBe("Local");
+    expect(formatSkillSourceLabel("本地安装")).toBe("Local");
   });
 
   it("uses source type to expand generic custom repository labels", () => {
@@ -27,6 +27,6 @@ describe("formatSkillSourceLabel", () => {
     expect(formatSkillSourceLabel("Agent Skills CLI", {
       sourceType: "well-known",
       sourceUrl: "https://open.feishu.cn/.well-known/skills/lark-okr/SKILL.md",
-    })).toBe("在线");
+    })).toBe("Online");
   });
 });
