@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { listen } from "@tauri-apps/api/event";
+import { listen } from "@/app/backend-i18n/tauri";
 import { SearchFieldIcon } from "@/app/components/SearchFieldIcon";
 import { useTranslate } from "@/app/i18n";
 import { AppSelect } from "@/app/components/AppSelect";

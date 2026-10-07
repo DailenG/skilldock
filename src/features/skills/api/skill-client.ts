@@ -1,5 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { invoke, listen, type UnlistenFn } from "@/app/backend-i18n/tauri";
 import { tx } from "@/app/i18n";
 import { isTauriRuntime } from "@/app/is-tauri-runtime";
 import {

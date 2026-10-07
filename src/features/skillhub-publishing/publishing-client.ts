@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "@/app/backend-i18n/tauri";
 import type { UpdatePreviewSnapshot } from "@/features/skills/state/skill-store";
 
 export type SkillHubAuthStatus = {

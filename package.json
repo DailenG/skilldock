@@ -11,6 +11,8 @@
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "test:watch": "vitest",
+    "i18n:backend:extract": "node scripts/backend-i18n/extract.mjs",
+    "i18n:backend:check": "node scripts/backend-i18n/extract.mjs --check",
     "tauri": "tauri",
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build",

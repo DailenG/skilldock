@@ -1,0 +1,193 @@
+import { BACKEND_TEXT_EN } from "./catalog";
+import { getBackendTextLanguage } from "./language";
+
+const CJK_PATTERN = /[\u3400-\u9fff\uff00-\uffef\u3000-\u303f]/;
+const PLACEHOLDER_CONTENT = /^(?:[A-Za-z_][A-Za-z0-9_]*(?::[^{}]*)?|[0-9]+(?::[^{}]*)?|:[^{}]*|)$/;
+
+type TemplatePart =
+  | { type: "literal"; value: string }
+  | { type: "placeholder"; value: string; name?: string };
+
+type CompiledTemplate = {
+  key: string;
+  value: string;
+  parts: TemplatePart[];
+  regex: RegExp;
+  literalLength: number;
+};
+
+let compiledTemplates: CompiledTemplate[] | undefined;
+let literalCatalog: Map<string, string> | undefined;
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function parseTemplate(template: string): TemplatePart[] {
+  const parts: TemplatePart[] = [];
+  let literal = "";
+
+  for (let index = 0; index < template.length;) {
+    if (template.startsWith("{{", index)) {
+      literal += "{";
+      index += 2;
+      continue;
+    }
+    if (template.startsWith("}}", index)) {
+      literal += "}";
+      index += 2;
+      continue;
+    }
+    if (template[index] === "{") {
+      const end = template.indexOf("}", index + 1);
+      if (end >= 0) {
+        const content = template.slice(index + 1, end);
+        if (PLACEHOLDER_CONTENT.test(content)) {
+          if (literal) {
+            parts.push({ type: "literal", value: literal });
+            literal = "";
+          }
+          const name = /^[A-Za-z_][A-Za-z0-9_]*/.exec(content)?.[0];
+          parts.push({
+            type: "placeholder",
+            value: template.slice(index, end + 1),
+            ...(name ? { name } : {}),
+          });
+          index = end + 1;
+          continue;
+        }
+      }
+    }
+
+    literal += template[index];
+    index += 1;
+  }
+
+  if (literal) {
+    parts.push({ type: "literal", value: literal });
+  }
+  return parts;
+}
+
+function getCompiledTemplates() {
+  if (compiledTemplates) {
+    return compiledTemplates;
+  }
+
+  compiledTemplates = Object.entries(BACKEND_TEXT_EN)
+    .map(([key, value]) => {
+      const parts = parseTemplate(key);
+      if (!parts.some((part) => part.type === "placeholder")) {
+        return null;
+      }
+
+      const pattern = parts.map((part) =>
+        part.type === "placeholder" ? "([\\s\\S]+?)" : escapeRegExp(part.value)
+      ).join("");
+      return {
+        key,
+        value,
+        parts,
+        regex: new RegExp(`^${pattern}$`),
+        literalLength: parts.reduce(
+          (length, part) => length + (part.type === "literal" ? part.value.length : 0),
+          0,
+        ),
+      };
+    })
+    .filter((template): template is CompiledTemplate => template !== null)
+    .sort((left, right) =>
+      right.literalLength - left.literalLength || right.key.length - left.key.length
+    );
+  return compiledTemplates;
+}
+
+function getLiteralCatalog() {
+  if (literalCatalog) {
+    return literalCatalog;
+  }
+
+  literalCatalog = new Map();
+  for (const [key, value] of Object.entries(BACKEND_TEXT_EN)) {
+    const parts = parseTemplate(key);
+    if (parts.every((part) => part.type === "literal")) {
+      literalCatalog.set(parts.map((part) => part.value).join(""), value);
+    }
+  }
+  return literalCatalog;
+}
+
+function renderTemplate(
+  template: string,
+  namedValues: Map<string, string[]>,
+  unnamedValues: string[],
+  language: "en",
+) {
+  let unnamedIndex = 0;
+  return parseTemplate(template).map((part) => {
+    if (part.type === "literal") {
+      return part.value;
+    }
+
+    const captured = part.name
+      ? namedValues.get(part.name)?.shift()
+      : unnamedValues[unnamedIndex++];
+    return captured === undefined ? part.value : localizeBackendText(captured, language);
+  }).join("");
+}
+
+function matchTemplate(text: string, template: CompiledTemplate, language: "en") {
+  const matches = template.regex.exec(text);
+  if (!matches) {
+    return null;
+  }
+
+  const namedValues = new Map<string, string[]>();
+  const unnamedValues: string[] = [];
+  let captureIndex = 1;
+  for (const part of template.parts) {
+    if (part.type !== "placeholder") {
+      continue;
+    }
+
+    const captured = matches[captureIndex++];
+    if (part.name) {
+      const captures = namedValues.get(part.name) ?? [];
+      captures.push(captured);
+      namedValues.set(part.name, captures);
+    } else {
+      unnamedValues.push(captured);
+    }
+  }
+
+  return renderTemplate(template.value, namedValues, unnamedValues, language);
+}
+
+export function localizeBackendText(
+  text: string,
+  language = getBackendTextLanguage(),
+): string {
+  if (language !== "en" || !CJK_PATTERN.test(text)) {
+    return text;
+  }
+
+  const normalizedText = text.trim();
+  const exactMatch = BACKEND_TEXT_EN[normalizedText];
+  if (exactMatch !== undefined) {
+    return exactMatch;
+  }
+
+  const literalMatch = getLiteralCatalog().get(normalizedText);
+  if (literalMatch !== undefined) {
+    return literalMatch;
+  }
+
+  for (const template of getCompiledTemplates()) {
+    const translated = matchTemplate(normalizedText, template, language);
+    if (translated !== null) {
+      return translated;
+    }
+  }
+
+  return text;
+}
