@@ -466,7 +466,7 @@
   "创建恢复目录失败 {}: {error}": "Failed to create restore directory {}: {error}",
   "创建插件共享仓库 Git exclude 目录失败（{}）: {error}": "Failed to create plugin shared repository Git exclude directory ({}): {error}",
   "创建插件共享仓库目录失败（{}）: {error}": "Failed to create plugin shared repository directory ({}): {error}",
-  "创建插件共享目录元数据目录失败（{}）: {error}": "Failed to create plugin shared directory metadata directory ({}): {error}",
+  "创建插件共享目录元数据目录失败（{}）: {error}": "Failed to create the shared plugin metadata directory ({}): {error}",
   "创建插件共享目录失败（{}）: {error}": "Failed to create plugin shared directory ({}): {error}",
   "创建插件合并结果失败: {error}": "Failed to create plugin merge result: {error}",
   "创建插件备份目录失败: {error}": "Failed to create plugin backup directory: {error}",
