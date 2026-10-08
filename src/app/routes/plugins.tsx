@@ -3578,8 +3578,8 @@ export function PluginsRoute(props: PluginsRouteProps = {}) {
                 onExpandedChange={(expanded, summaryElement) =>
                   handleExpandedChange(pluginKey, expanded, summaryElement)
                 }
-                expandLabel={language === "en" ? "Expand" : "展开"}
-                collapseLabel={language === "en" ? "Collapse" : "收起"}
+                expandLabel={t("app.action.expand")}
+                collapseLabel={t("app.action.collapse")}
                 layout={viewMode}
                 actions={[
                   ...(collabBadge
@@ -3602,7 +3602,7 @@ export function PluginsRoute(props: PluginsRouteProps = {}) {
                         {
                           key: "update",
                           label: updateActionLabel,
-                          modalLabel: language === "en" ? "Update" : "更新",
+                          modalLabel: t("plugins.action.update.label"),
                           ariaLabel: updateActionLabel,
                           className: "skill-card__icon-button skill-card__icon-button--update",
                           modalClassName: "is-primary",
@@ -3621,8 +3621,8 @@ export function PluginsRoute(props: PluginsRouteProps = {}) {
                       t,
                     ),
                     modalLabel: plugin.enabledState === "enabled"
-                      ? language === "en" ? "Disable" : "关闭"
-                      : language === "en" ? "Enable" : "开启",
+                      ? t("plugins.action.toggle.disableLabel")
+                      : t("plugins.action.toggle.enableLabel"),
                     ariaLabel: getPluginToggleActionLabel(
                       plugin,
                       isTogglePending,
@@ -3704,7 +3704,7 @@ export function PluginsRoute(props: PluginsRouteProps = {}) {
                   {
                     key: "open-folder",
                     label: openActionLabel,
-                    modalLabel: language === "en" ? "Open folder" : "打开目录",
+                    modalLabel: t("plugins.action.openFolder.label"),
                     ariaLabel: openActionLabel,
                     className: "skill-card__icon-button",
                     icon: <OpenFolderIcon />,
@@ -3729,7 +3729,7 @@ export function PluginsRoute(props: PluginsRouteProps = {}) {
                     : {
                         key: "delete",
                         label: deleteActionLabel,
-                        modalLabel: language === "en" ? "Delete" : "删除",
+                        modalLabel: t("plugins.action.delete.label"),
                         modalIconOnly: true,
                         hideInModal: true,
                         ariaLabel: deleteActionLabel,
@@ -3901,7 +3901,7 @@ export function PluginsRoute(props: PluginsRouteProps = {}) {
           >
             <div className="skill-file-dialog__header">
               <div className="skill-file-dialog__title">
-                <h3 id="plugin-update-confirm-title">更新将覆盖本地修改</h3>
+                <h3 id="plugin-update-confirm-title">{t("plugins.update.confirm.title")}</h3>
                 <p>{getPluginDisplayName(updateConfirmingPlugin)}</p>
               </div>
               <button
@@ -3914,7 +3914,7 @@ export function PluginsRoute(props: PluginsRouteProps = {}) {
               </button>
             </div>
             <div className="skill-file-dialog__body plugins-page__preview-body">
-              <p>这个插件目录存在本地修改。继续更新会用上游版本覆盖当前本地内容。</p>
+              <p>{t("plugins.update.confirm.description")}</p>
             </div>
             <div className="skill-file-dialog__footer">
               <button
@@ -3922,7 +3922,7 @@ export function PluginsRoute(props: PluginsRouteProps = {}) {
                 type="button"
                 onClick={() => setUpdateConfirmingPlugin(null)}
               >
-                取消
+                {t("batch.cancel")}
               </button>
               <button
                 className="secondary-button secondary-button--compact danger-button"
@@ -3935,7 +3935,7 @@ export function PluginsRoute(props: PluginsRouteProps = {}) {
                   }
                 }}
               >
-                继续更新
+                {t("plugins.update.confirm.continue")}
               </button>
             </div>
           </section>

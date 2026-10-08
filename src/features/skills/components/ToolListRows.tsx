@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useTranslate } from "@/app/i18n";
 import { SearchFieldIcon } from "@/app/components/SearchFieldIcon";
 import { BatchSelectionMark } from "@/app/components/BatchActions";
 import { alignExpandedRowIntoView } from "@/app/utils/align-expanded-row";
@@ -63,6 +64,7 @@ function ToolListRowBadges({ badges }: { badges: RowBadge[] }) {
 }
 
 export function ToolListRow(props: ToolListRowProps) {
+  const { t } = useTranslate();
   const {
     actions = [],
     badges = [],
@@ -74,8 +76,8 @@ export function ToolListRow(props: ToolListRowProps) {
     rowId,
     onExpandedChange,
     subtitle,
-    expandLabel = "展开",
-    collapseLabel = "收起",
+    expandLabel = t("app.action.expand"),
+    collapseLabel = t("app.action.collapse"),
     layout = "list",
     gridBadges = [],
     gridMeta,
@@ -294,6 +296,7 @@ export function RefreshIcon({ isSpinning = false }: { isSpinning?: boolean }) {
 }
 
 export function ToolListPageShell(props: ToolListPageShellProps) {
+  const { t } = useTranslate();
   const {
     children,
     emptyDescription,
@@ -333,7 +336,7 @@ export function ToolListPageShell(props: ToolListPageShellProps) {
     <section className="mcp-toolbar skills-header-bar__tools" aria-label={toolbarAriaLabel}>
       {onSearchChange ? (
         <label className="search-field search-field--header mcp-toolbar__search">
-          <span className="sr-only">{searchAriaLabel || searchPlaceholder || "搜索"}</span>
+          <span className="sr-only">{searchAriaLabel || searchPlaceholder || t("app.action.search")}</span>
           <SearchFieldIcon />
           <input
             type="search"

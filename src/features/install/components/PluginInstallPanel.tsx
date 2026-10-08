@@ -168,15 +168,18 @@ function hostInstallTargetTooltip(
   isHostAppInstalled: boolean,
   isPluginInstalled: boolean,
   isSelected: boolean,
+  t: ReturnType<typeof useTranslate>["t"],
 ) {
   const label = hostLabel(hostTool);
   if (!isHostAppInstalled) {
-    return `${label} · 宿主未安装`;
+    return `${label} · ${t("install.plugin.host.notInstalled")}`;
   }
   if (isPluginInstalled) {
-    return `${label} · 已安装`;
+    return `${label} · ${t("install.plugin.state.installed")}`;
   }
-  return isSelected ? `${label} · 取消选择` : `${label} · 选中安装`;
+  return isSelected
+    ? `${label} · ${t("install.plugin.action.deselect")}`
+    : `${label} · ${t("install.plugin.action.selectInstall")}`;
 }
 
 function handleButtonLikeKeyDown(
@@ -678,7 +681,7 @@ export function PluginInstallPanel() {
 
     flushSync(() => {
       setIsProbing(true);
-      setCloneProgressMessage("正在查询插件信息...");
+      setCloneProgressMessage(t("install.plugin.querying"));
     });
     setProbeSearchQuery("");
     await waitForNextPaint();
@@ -754,7 +757,7 @@ export function PluginInstallPanel() {
     }
 
     setIsInstalling(true);
-    setCloneProgressMessage("正在准备安装...");
+    setCloneProgressMessage(t("install.plugin.preparing"));
     try {
       const installResults = await Promise.allSettled(
         selectedProbeInstallTargets
@@ -813,14 +816,17 @@ export function PluginInstallPanel() {
     }
     if (!installedHostApps.has(hostTool)) {
       notify({
-        message: `${hostLabel(hostTool)} 软件未安装，无法勾选。`,
+        message: t("install.plugin.error.hostNotInstalled", { host: hostLabel(hostTool) }),
         tone: "info",
       });
       return;
     }
     if ((installedPluginHostsByProbeRoot[probe.pluginRoot] ?? new Set<PluginHostTool>()).has(hostTool)) {
       notify({
-        message: `${probeTitle(probe)} 已安装到 ${hostLabel(hostTool)}。`,
+        message: t("install.plugin.notice.alreadyInstalled", {
+          plugin: probeTitle(probe),
+          host: hostLabel(hostTool),
+        }),
         tone: "info",
       });
       return;
@@ -1007,8 +1013,8 @@ export function PluginInstallPanel() {
                 const fullyInstalled = isProbeFullyInstalled(probe, installedPluginHostsByProbeRoot);
                 const canToggleCard = probe.kind === "plugin-repo" && !fullyInstalled;
                 const cardAriaLabel = fullyInstalled
-                  ? `插件 ${probeTitle(probe)} 已安装`
-                  : `选择插件 ${probeTitle(probe)}`;
+                  ? t("install.plugin.aria.installed", { plugin: probeTitle(probe) })
+                  : t("install.plugin.aria.select", { plugin: probeTitle(probe) });
 
                 return (
                   <div
@@ -1040,7 +1046,7 @@ export function PluginInstallPanel() {
                           <span>{probeSubtitle(probe)}</span>
                         </div>
                         {componentLabels.length > 0 ? (
-                          <div className="plugin-install-preview__components" aria-label={`${probeTitle(probe)} 插件组件数量`}>
+                          <div className="plugin-install-preview__components" aria-label={t("install.plugin.aria.componentCount", { plugin: probeTitle(probe) })}>
                             {componentLabels.map((label) => (
                               <span key={label} className="plugin-install-preview__component-chip">{label}</span>
                             ))}
@@ -1054,7 +1060,7 @@ export function PluginInstallPanel() {
                               {t("install.repo.badgeInstalled")}
                             </span>
                           ) : null}
-                          <div className="plugin-install-preview__host-icons" aria-label={`${probeTitle(probe)} 安装宿主`}>
+                          <div className="plugin-install-preview__host-icons" aria-label={t("install.plugin.aria.installHost", { plugin: probeTitle(probe) })}>
                             {hostTools.map((hostTool) => {
                               const hostSelected = (selectedHostsByPluginRoot[probe.pluginRoot] ?? [])
                                 .includes(hostTool);
@@ -1070,15 +1076,27 @@ export function PluginInstallPanel() {
                                     pluginInstalled ? " is-installed" : ""
                                   }`}
                                   type="button"
-                                  data-tooltip={hostInstallTargetTooltip(hostTool, hostAppInstalled, pluginInstalled, hostSelected)}
+                                  data-tooltip={hostInstallTargetTooltip(hostTool, hostAppInstalled, pluginInstalled, hostSelected, t)}
                                   aria-pressed={hostSelected}
                                   aria-disabled={!hostAppInstalled || pluginInstalled}
                                   aria-label={
                                     !hostAppInstalled
-                                      ? `${hostLabel(hostTool)} 未安装，无法作为 ${probeTitle(probe)} 安装宿主`
+                                      ? t("install.plugin.aria.hostNotInstalled", {
+                                        host: hostLabel(hostTool),
+                                        plugin: probeTitle(probe),
+                                      })
                                       : pluginInstalled
-                                        ? `${probeTitle(probe)} 已安装到 ${hostLabel(hostTool)}`
-                                        : `${hostSelected ? "取消选择" : "选择"} ${hostLabel(hostTool)} 作为 ${probeTitle(probe)} 安装宿主`
+                                        ? t("install.plugin.aria.alreadyInstalled", {
+                                          plugin: probeTitle(probe),
+                                          host: hostLabel(hostTool),
+                                        })
+                                        : t("install.plugin.aria.hostAction", {
+                                          action: hostSelected
+                                            ? t("install.plugin.action.deselect")
+                                            : t("install.plugin.action.select"),
+                                          host: hostLabel(hostTool),
+                                          plugin: probeTitle(probe),
+                                        })
                                   }
                                   onClick={(event) => {
                                     event.stopPropagation();

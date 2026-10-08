@@ -235,7 +235,7 @@ export function RepoInstallPanel() {
 
     flushSync(() => {
       setIsDiscovering(true);
-      setCloneProgressMessage("正在连接仓库...");
+      setCloneProgressMessage(t("install.repo.progress.connecting"));
     });
     setCandidateSearchQuery("");
 
@@ -267,7 +267,7 @@ export function RepoInstallPanel() {
     }
 
     setIsInstalling(true);
-    setCloneProgressMessage("正在准备安装...");
+    setCloneProgressMessage(t("install.repo.progress.preparing"));
     try {
       await installFromRepo(normalizedRepoUrl, selectedPaths, selectedGitRef);
       notify({ message: t("install.repo.success.selectedInstalled"), tone: "success" });

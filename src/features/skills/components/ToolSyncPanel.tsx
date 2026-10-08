@@ -118,7 +118,7 @@ export function ToolSyncPanel({
         action: t(enabled ? "skill.tools.action.enable" : "skill.tools.action.disable"),
         success: toolNames.length - failedToolNames.length,
         failed: failedToolNames.length,
-        names: failedToolNames.join("、"),
+        names: failedToolNames.join(t("app.list.separator")),
       })), {
         operation: "sync_all_skill_tools",
         fallbackMessage: t("skill.tools.error.toggle"),

@@ -1,3 +1,5 @@
+import { getCurrentTranslationLanguage, tx } from "@/app/i18n";
+
 type SkillSourceDisplayOptions = {
   sourceType?: string;
   sourceUrl?: string;
@@ -17,15 +19,15 @@ function resolveSourceLabelFromType(sourceType?: string) {
   }
 
   if (sourceType === "well-known") {
-    return "在线";
+    return tx(getCurrentTranslationLanguage(), "skills.source.online");
   }
 
   if (sourceType === "marketplace") {
-    return "市场";
+    return tx(getCurrentTranslationLanguage(), "skills.source.marketplace");
   }
 
   if (sourceType === "local") {
-    return "本地";
+    return tx(getCurrentTranslationLanguage(), "skills.source.local");
   }
 
   return null;
@@ -68,14 +70,14 @@ function resolveSourceTypeFromUrl(sourceUrl?: string) {
 
 export function formatSkillSourceLabel(value: string, options: SkillSourceDisplayOptions = {}) {
   if (value === "本地导入" || value === "本地安装" || value === "Local Import" || value === "Local Install" || value === "Local") {
-    return "本地";
+    return tx(getCurrentTranslationLanguage(), "skills.source.local");
   }
 
   if (value === "自定义仓库" || value === "Custom Repository") {
     return (
       resolveSourceLabelFromType(options.sourceType)
       || resolveSourceLabelFromType(resolveSourceTypeFromUrl(options.sourceUrl) ?? undefined)
-      || value
+      || tx(getCurrentTranslationLanguage(), "skills.source.customRepository")
     );
   }
 

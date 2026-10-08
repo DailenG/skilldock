@@ -4,7 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { save } from "@tauri-apps/plugin-dialog";
 import { getWorkspaceDirectoryPath } from "@/app/path-utils";
-import { useTranslate } from "@/app/i18n";
+import { useTranslate, type TranslationKey } from "@/app/i18n";
 import { useFailureReporter } from "@/app/failure-feedback";
 import { useNotifications } from "@/app/notifications";
 import { AppSelect } from "@/app/components/AppSelect";
@@ -225,6 +225,10 @@ type SettingsFormItem = {
   onActivate?: () => void | Promise<void>;
 };
 
+type AppUpdateMessage =
+  | { key: TranslationKey; values?: Record<string, string | number> }
+  | { text: string };
+
 export function SettingsRoute() {
   const { language, t } = useTranslate();
   const { notify } = useNotifications();
@@ -297,7 +301,9 @@ export function SettingsRoute() {
     "idle" | "checking" | "available" | "not-available" | "installing" | "error"
   >("idle");
   const [isAppUpdateReleaseNotesOpen, setIsAppUpdateReleaseNotesOpen] = useState(false);
-  const [appUpdateMessage, setAppUpdateMessage] = useState(t("settings.update.status.idle"));
+  const [appUpdateMessage, setAppUpdateMessage] = useState<AppUpdateMessage>({
+    key: "settings.update.status.idle",
+  });
   const [appUpdateProgress, setAppUpdateProgress] = useState<AppUpdateProgress | null>(null);
   const githubCopyFeedbackTimerRef = useRef<number | null>(null);
   const toolStatusGroupRef = useRef<HTMLElement | null>(null);
@@ -318,6 +324,9 @@ export function SettingsRoute() {
   const appUpdateActionClassName = shouldShowInstallAppUpdate
     ? "primary-button primary-button--compact settings-update-button settings-update-button--install"
     : "secondary-button secondary-button--compact settings-update-button";
+  const appUpdateMessageText = "key" in appUpdateMessage
+    ? t(appUpdateMessage.key, appUpdateMessage.values)
+    : appUpdateMessage.text;
   const repoCacheSizeLabel =
     repoCacheSize === null
       ? t("settings.cache.loading")
@@ -787,15 +796,6 @@ export function SettingsRoute() {
   }, [isAppUpdateReleaseNotesOpen, shouldShowAppUpdateReleaseNotes]);
 
   useEffect(() => {
-    setAppUpdateMessage((current) => {
-      if (current.trim().length === 0 || current === t("settings.update.status.idle")) {
-        return t("settings.update.status.idle");
-      }
-      return current;
-    });
-  }, [t]);
-
-  useEffect(() => {
     let shouldIgnore = false;
 
     void fetchCurrentAppVersion()
@@ -859,7 +859,7 @@ export function SettingsRoute() {
     setIsAppUpdateReleaseNotesOpen(false);
     setAppUpdate(null);
     setAppUpdateStatus("checking");
-    setAppUpdateMessage(t("settings.update.status.checking"));
+    setAppUpdateMessage({ key: "settings.update.status.checking" });
     setAppUpdateProgress(null);
 
     try {
@@ -871,19 +871,22 @@ export function SettingsRoute() {
         setAppUpdateStatus("available");
         setAppUpdateMessage(
           update.version
-            ? t("settings.update.status.available", { version: update.version })
-            : t("settings.update.status.availableNoVersion"),
+            ? { key: "settings.update.status.available", values: { version: update.version } }
+            : { key: "settings.update.status.availableNoVersion" },
         );
         return;
       }
 
       setAppUpdateStatus("not-available");
-      setAppUpdateMessage(t("settings.update.status.latest"));
+      setAppUpdateMessage({ key: "settings.update.status.latest" });
     } catch (error) {
       setIsAppUpdateReleaseNotesOpen(false);
       setAppUpdateStatus("error");
-      const message = error instanceof Error ? error.message : t("settings.update.status.checkFailed");
-      setAppUpdateMessage(message);
+      setAppUpdateMessage(
+        error instanceof Error
+          ? { text: error.message }
+          : { key: "settings.update.status.checkFailed" },
+      );
       reportFailure(error, {
         operation: "check_for_app_update",
         fallbackMessage: t("settings.update.status.checkFailed"),
@@ -897,7 +900,7 @@ export function SettingsRoute() {
     }
 
     setAppUpdateStatus("installing");
-    setAppUpdateMessage(t("settings.update.status.installing"));
+    setAppUpdateMessage({ key: "settings.update.status.installing" });
 
     try {
       await appUpdate.install((progress) => {
@@ -905,8 +908,11 @@ export function SettingsRoute() {
       });
     } catch (error) {
       setAppUpdateStatus("error");
-      const message = error instanceof Error ? error.message : t("settings.update.status.installFailed");
-      setAppUpdateMessage(message);
+      setAppUpdateMessage(
+        error instanceof Error
+          ? { text: error.message }
+          : { key: "settings.update.status.installFailed" },
+      );
       reportFailure(error, {
         operation: "install_app_update",
         fallbackMessage: t("settings.update.status.installFailed"),
@@ -1238,7 +1244,7 @@ export function SettingsRoute() {
               <div className="settings-form-item">
                 <div className="settings-form-item__copy">
                   <span className="settings-form-item__title">{t("settings.update.status")}</span>
-                  <p>{appUpdateMessage}</p>
+                  <p>{appUpdateMessageText}</p>
                   {appUpdateProgress ? <p>{formatUpdateSize(appUpdateProgress)}</p> : null}
                 </div>
                 <div className="settings-form-item__control settings-update-actions">

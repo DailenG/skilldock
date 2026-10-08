@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { BusinessError, normalizeErrorMessage } from "@/app/errors";
+import { getCurrentTranslationLanguage, tx } from "@/app/i18n";
 import {
   detectPreferredAppLanguage,
   connectGithubToken as connectGithubTokenRequest,
@@ -389,7 +390,7 @@ function mergeRefreshedSkillsPreservingTags(
   });
 }
 
-function mergeLocalGitStates(
+export function mergeLocalGitStates(
   currentSkills: SkillSummary[],
   refreshedSkills: SkillSummary[],
 ) {
@@ -406,6 +407,7 @@ function mergeLocalGitStates(
       branch: refreshedSkill.branch,
       collabStatus: refreshedSkill.collabStatus,
       statusText: refreshedSkill.statusText,
+      statusTextSource: refreshedSkill.statusTextSource,
       localUpdatedAt: refreshedSkill.localUpdatedAt,
       lastCheckedAt: refreshedSkill.lastCheckedAt,
       commitLabel: refreshedSkill.commitLabel,
@@ -430,13 +432,11 @@ function restoreDeletedSkill(
 }
 
 function getMarketplaceSearchFailedMessage(language: AppLanguage) {
-  return language === "en" ? "Failed to search sources" : "搜索安装源失败";
+  return tx(language, "marketplace.error.search");
 }
 
 function getMarketplaceLoadFailedMessage(language: AppLanguage, sourceSite: MarketplaceSourceSite) {
-  return language === "en"
-    ? `Failed to load skills from ${sourceSite}`
-    : `加载 ${sourceSite} 技能失败`;
+  return tx(language, "marketplace.error.load", { source: sourceSite });
 }
 
 function getPartialSkillUpdateFailedMessage(input: {
@@ -445,11 +445,11 @@ function getPartialSkillUpdateFailedMessage(input: {
   failed: number;
   names: string;
 }) {
-  if (input.language === "en") {
-    return `Updated ${input.updated} skills, but ${input.failed} failed: ${input.names}`;
-  }
-
-  return `已更新 ${input.updated} 个 skill，${input.failed} 个更新失败：${input.names}`;
+  return tx(input.language, "skill.bulkUpdate.partial", {
+    updated: input.updated,
+    failed: input.failed,
+    names: input.names,
+  });
 }
 
 function removeImportedCandidate(
@@ -480,6 +480,7 @@ function normalizeCachedSkillSummary(skill: CachedSkillSummary): SkillSummary {
     branch: skill.branch ?? "",
     collabStatus: skill.collabStatus ?? "clean",
     statusText: skill.statusText ?? "",
+    statusTextSource: skill.statusTextSource,
     remoteUpdatedAt: skill.remoteUpdatedAt ?? skill.lastSyncedAt ?? normalizedUpdatedAt,
     localUpdatedAt: skill.localUpdatedAt ?? skill.lastSyncedAt ?? normalizedUpdatedAt,
     lastCheckedAt: skill.lastCheckedAt ?? "",
@@ -583,6 +584,7 @@ export function mergeStartupSkillStatusCache(
       branch: cachedSkill.branch,
       collabStatus: cachedSkill.collabStatus,
       statusText: cachedSkill.statusText,
+      statusTextSource: cachedSkill.statusTextSource,
       remoteUpdatedAt: cachedSkill.remoteUpdatedAt,
       localUpdatedAt: cachedSkill.localUpdatedAt,
       lastCheckedAt: cachedSkill.lastCheckedAt,
@@ -640,7 +642,7 @@ export function SkillWorkspaceProvider({ children }: SkillWorkspaceProviderProps
           mcpInstallActivation: "apply-all-tools",
           skillSourceViewStyle: readStoredSkillSourceViewStyle(),
           skillTagFilterLayout: DEFAULT_SKILL_TAG_FILTER_LAYOUT,
-          language: "zh-CN",
+          language: getCurrentTranslationLanguage(),
           languageSource: "auto",
           theme: readStoredAppTheme(),
         },
@@ -1633,7 +1635,7 @@ export function SkillWorkspaceProvider({ children }: SkillWorkspaceProviderProps
           }))
           .filter((item) => item.result.status === "rejected");
         if (failedUpdates.length > 0) {
-          const failedSkillNames = failedUpdates.map((item) => item.skillName).join("、");
+          const failedSkillNames = failedUpdates.map((item) => item.skillName).join(tx(language, "app.list.separator"));
           throw new BusinessError(getPartialSkillUpdateFailedMessage({
             language,
             updated: updatedSkills.length,

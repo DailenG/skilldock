@@ -79,7 +79,7 @@ import type {
 } from "@/features/skills/state/skill-store";
 import {
   localizeGitAccountSummary,
-  localizeSkillStatusText,
+  localizeSkillSummary,
   localizeToolConfigs,
 } from "@/features/skills/utils/skill-localization";
 import { mergeSkillToolsWithInstalledTools } from "@/features/skills/utils/skill-tools";
@@ -542,7 +542,7 @@ function normalizeSkillSummary(skill: LegacySkillSummary): SkillSummary {
   const ownerPluginId = skill.ownerPluginId?.trim() || undefined;
   const ownerPluginName = skill.ownerPluginName?.trim() || undefined;
 
-  return {
+  return localizeSkillSummary({
     name: skill.name ?? "",
     sourceLabel: skill.sourceLabel ?? "",
     sourceType: skill.sourceType ?? "local",
@@ -551,7 +551,8 @@ function normalizeSkillSummary(skill: LegacySkillSummary): SkillSummary {
     localPath: skill.localPath ?? "",
     branch: skill.branch ?? "",
     collabStatus: skill.collabStatus ?? "clean",
-    statusText: localizeSkillStatusText(skill.statusText ?? "", language),
+    statusText: skill.statusText ?? "",
+    statusTextSource: skill.statusTextSource,
     remoteUpdatedAt: skill.remoteUpdatedAt ?? skill.lastSyncedAt ?? normalizedUpdatedAt,
     localUpdatedAt: skill.localUpdatedAt ?? skill.lastSyncedAt ?? normalizedUpdatedAt,
     lastCheckedAt: skill.lastCheckedAt ?? "",
@@ -577,11 +578,8 @@ function normalizeSkillSummary(skill: LegacySkillSummary): SkillSummary {
     marketplaceSlug: skill.marketplaceSlug ?? "",
     marketplaceVersion: skill.marketplaceVersion ?? "",
     marketplaceContentHash: skill.marketplaceContentHash ?? "",
-    tools: (skill.tools ?? []).map((tool) => ({
-      ...tool,
-      statusLabel: localizeToolStatusLabel(tool.statusLabel, language),
-    })),
-  };
+    tools: skill.tools ?? [],
+  }, language);
 }
 
 function normalizeSkillSummaryList(skills: LegacySkillSummary[]): SkillSummary[] {

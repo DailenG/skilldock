@@ -1011,7 +1011,7 @@ export function SkillListPage(props: SkillListPageProps) {
           setToolSkillStatuses,
         });
         if (failedToolNames.length > 0) {
-          throw new Error(failedToolNames.join("、"));
+          throw new Error(failedToolNames.join(t("app.list.separator")));
         }
       },
       selectedSkills.length - targets.length,

@@ -669,7 +669,7 @@ function McpEnabledAppSummary({ apps }: { apps: McpAppStatus[] }) {
   const visibleApps = enabledApps.slice(0, MCP_SUMMARY_APP_ICON_LIMIT);
   const hiddenAppCount = Math.max(enabledApps.length - visibleApps.length, 0);
   const summaryLabel = enabledApps.length > 0
-    ? t("mcp.summary.enabledApps", { apps: enabledApps.map((app) => app.appName).join("、") })
+    ? t("mcp.summary.enabledApps", { apps: enabledApps.map((app) => app.appName).join(t("app.list.separator")) })
     : t("mcp.summary.disabled");
 
   function handleEnabledAppsToggle(event: ReactMouseEvent<HTMLButtonElement>) {
@@ -1622,7 +1622,7 @@ export function McpRoute(props: McpRouteProps = {}) {
           const gridSummaryApps = enabledVisibleApps.slice(0, MCP_GRID_SUMMARY_APP_LIMIT);
           const gridSummaryAppExtraCount = enabledVisibleAppCount - gridSummaryApps.length;
           const enabledAppsSummaryLabel = enabledVisibleAppCount > 0
-            ? t("mcp.summary.enabledApps", { apps: enabledVisibleApps.map((app) => app.appName).join("、") })
+            ? t("mcp.summary.enabledApps", { apps: enabledVisibleApps.map((app) => app.appName).join(t("app.list.separator")) })
             : t("mcp.summary.disabled");
           const appBulkAction = pendingAppKey === `${server.id}:apps:enable`
             ? "enable"

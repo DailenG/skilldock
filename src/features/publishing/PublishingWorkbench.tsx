@@ -772,7 +772,7 @@ function BatchPublishConfirmDialog(props: {
             <div><span>{t("publishing.batch.updates")}</span><strong>{updateCount}</strong></div>
           </div>
           <p className="publish-batch-dialog__names">
-            {props.skills.map((skill) => skill.name).join(language === "en" ? ", " : "、")}
+            {props.skills.map((skill) => skill.name).join(t("app.list.separator"))}
           </p>
         </div>
         <footer className="dialog-card__footer">
