@@ -22,6 +22,25 @@ it("localizes nested clone failures across lines and ASCII prefixes", () => {
   ].join("\n"));
 });
 
+it("localizes a single-line clone failure from its original source", () => {
+  expect(localizeBackendText(
+    "HTTP /does/not/exist.git: 仓库克隆失败: fatal: repository '/does/not/exist.git' does not exist",
+    "en",
+  )).toBe(
+    "HTTP /does/not/exist.git: Repository clone failed: fatal: repository '/does/not/exist.git' does not exist",
+  );
+});
+
+it("localizes the runtime clone failure with a header and one HTTP line", () => {
+  expect(localizeBackendText([
+    "无法克隆远端仓库。已先尝试 HTTP，失败后尝试 SSH，均未成功。",
+    "HTTP /does/not/exist.git: 仓库克隆失败: fatal: repository '/does/not/exist.git' does not exist",
+  ].join("\n"), "en")).toBe([
+    "Could not clone the remote repository. HTTP was tried first, then SSH, but both failed.",
+    "HTTP /does/not/exist.git: Repository clone failed: fatal: repository '/does/not/exist.git' does not exist",
+  ].join("\n"));
+});
+
 it("keeps unknown CJK text unchanged without scanning every ASCII prefix", () => {
   const message = "a: b: c: d: e: f: g: h: i: j: k: l: 未知中文";
   const execSpy = vi.spyOn(RegExp.prototype, "exec");

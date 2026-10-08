@@ -270,11 +270,9 @@ function localizeBackendTextInternal(
   }
 
   let bestText = localizeResidualText(translatedText, language, depth + 1);
-  if (text.includes("\n")) {
-    const sourceCandidate = localizeResidualText(text, language, depth + 1);
-    if (countCjkCharacters(sourceCandidate) < countCjkCharacters(bestText)) {
-      bestText = sourceCandidate;
-    }
+  const sourceCandidate = localizeResidualText(text, language, depth + 1);
+  if (countCjkCharacters(sourceCandidate) < countCjkCharacters(bestText)) {
+    bestText = sourceCandidate;
   }
   return bestText;
 }
