@@ -31,6 +31,7 @@ describe("fork release configuration contract", () => {
     expect(triggers).not.toMatch(/^\s+release:\s*$/m);
     expect(workflow).toContain("runs-on: windows-latest");
     expect(workflow).not.toContain("wanghuan9");
+    expect(workflow).toContain("git ls-remote --exit-code --tags origin");
 
     const windowsConfigIndex = workflow.indexOf("--config src-tauri/tauri.windows.conf.json");
     const forkConfigIndex = workflow.indexOf("--config src-tauri/tauri.fork.conf.json");
