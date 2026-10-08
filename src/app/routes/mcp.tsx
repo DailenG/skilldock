@@ -12,6 +12,7 @@ import { useBatchSelection } from "@/app/hooks/useBatchSelection";
 import { alignExpandedRowIntoView } from "@/app/utils/align-expanded-row";
 import { ToolbarGoInstallButton } from "@/app/components/ToolbarGoInstallButton";
 import { useTranslate, type TranslationKey } from "@/app/i18n";
+import { localizeBackendText } from "@/app/backend-i18n/localize";
 import { useNotifications } from "@/app/notifications";
 import { BusinessError } from "@/app/errors";
 import { useFailureReporter } from "@/app/failure-feedback";
@@ -724,7 +725,7 @@ type McpRouteProps = {
 };
 
 export function McpRoute(props: McpRouteProps = {}) {
-  const { t } = useTranslate();
+  const { language, t } = useTranslate();
   const { toolConfigs } = useSkillWorkspace();
   const { notify } = useNotifications();
   const reportFailure = useFailureReporter();
@@ -2014,7 +2015,9 @@ export function McpRoute(props: McpRouteProps = {}) {
                     ) : server.tools.length > 0 ? null : (
                       <p className="mcp-server-card__tool-empty">
                         {server.toolsDiscoveryError
-                          ? t("mcp.card.toolsError", { message: server.toolsDiscoveryError })
+                          ? t("mcp.card.toolsError", {
+                              message: localizeBackendText(server.toolsDiscoveryError, language),
+                            })
                           : t("mcp.card.toolsEmpty")}
                       </p>
                     )}

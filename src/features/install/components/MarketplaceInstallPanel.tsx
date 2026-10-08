@@ -4,6 +4,7 @@ import { useTranslate } from "@/app/i18n";
 import { useFailureReporter } from "@/app/failure-feedback";
 import { useNotifications } from "@/app/notifications";
 import { MarketplaceSkillDetailPreview } from "@/features/install/components/MarketplaceSkillDetailPreview";
+import { resolveMarketplaceDescription } from "@/features/install/marketplace-description";
 import {
   fetchMarketplaceSkillDetail,
   openExternalLink,
@@ -436,14 +437,15 @@ function buildListDescription(
   skill: MarketplaceSkill,
   t: (key: "install.market.fallbackDescription", values: Record<string, string | number>) => string,
 ) {
-  if (skill.sourceSite !== "skills.sh" && skill.description.trim()) {
-    return skill.description;
-  }
+  const trimmedDescription = skill.description.trim();
   const repositoryLabel = extractRepositoryLabel(skill.sourceUrl);
-  return skill.description.trim() || t("install.market.fallbackDescription", {
-    repository: repositoryLabel || skill.maintainer,
-    name: skill.name,
-  });
+  const description = skill.sourceSite !== "skills.sh" && trimmedDescription
+    ? skill.description
+    : trimmedDescription || t("install.market.fallbackDescription", {
+        repository: repositoryLabel || skill.maintainer,
+        name: skill.name,
+      });
+  return resolveMarketplaceDescription(description, skill.name, t);
 }
 
 function extractRepositoryLabel(sourceUrl: string) {

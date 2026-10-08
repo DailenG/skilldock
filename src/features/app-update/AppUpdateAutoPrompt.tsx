@@ -27,6 +27,10 @@ export function AppUpdateAutoPrompt() {
   const { t } = useTranslate();
   const { notify } = useNotifications();
   const reportFailure = useFailureReporter();
+  const tRef = useRef(t);
+  const reportFailureRef = useRef(reportFailure);
+  tRef.current = t;
+  reportFailureRef.current = reportFailure;
   const [update, setUpdate] = useState<AppUpdateCheckResult | null>(null);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [isInstalling, setIsInstalling] = useState(false);
@@ -79,9 +83,9 @@ export function AppUpdateAutoPrompt() {
         })
         .catch((error) => {
           console.warn("Automatic app update check failed", error);
-          reportFailure(error, {
+          reportFailureRef.current(error, {
             operation: "auto_check_for_app_update",
-            fallbackMessage: t("updates.autoCheckFailed"),
+            fallbackMessage: tRef.current("updates.autoCheckFailed"),
           });
         })
         .finally(() => {

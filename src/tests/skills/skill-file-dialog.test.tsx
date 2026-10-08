@@ -279,6 +279,7 @@ beforeEach(() => {
 });
 
 test("keeps nested skill directories collapsed by default", async () => {
+  window.localStorage.setItem("skilldock.settings.language", "zh-CN");
   renderSkillFileDialog();
 
   expect(await screen.findByRole("dialog", { name: "drawio-diagram" })).toBeInTheDocument();
