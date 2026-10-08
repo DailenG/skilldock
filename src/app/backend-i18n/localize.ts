@@ -6,6 +6,7 @@ const BACKEND_ERROR_PLACEHOLDER_NAME = /^(?:e|err|error|reason|message|msg|detai
 const BACKEND_ERROR_PLACEHOLDER_SUFFIX = /_(?:error|err|message|reason|detail)$/i;
 const BACKEND_SENTENCE_PUNCTUATION = /[。！？；：，]/;
 const PLACEHOLDER_CONTENT = /^(?:[A-Za-z_][A-Za-z0-9_]*(?::[^{}]*)?|[0-9]+(?::[^{}]*)?|:[^{}]*|)$/;
+const MAX_LOCALIZATION_DEPTH = 128;
 
 type TemplatePart =
   | { type: "literal"; value: string }
@@ -156,6 +157,7 @@ function renderTemplate(
   unnamedValues: string[],
   language: "en",
   memo: Map<string, string>,
+  depth: number,
 ) {
   let unnamedIndex = 0;
   return parseTemplate(template).map((part) => {
@@ -175,7 +177,7 @@ function renderTemplate(
         || BACKEND_ERROR_PLACEHOLDER_SUFFIX.test(part.name)
       : isNestedBackendMessage(captured));
     return shouldLocalizeCaptured
-      ? localizeBackendTextInternal(captured, language, memo)
+      ? localizeBackendTextInternal(captured, language, memo, depth + 1)
       : captured;
   }).join("");
 }
@@ -185,6 +187,7 @@ function matchTemplate(
   template: CompiledTemplate,
   language: "en",
   memo: Map<string, string>,
+  depth: number,
 ) {
   const matches = template.regex.exec(text);
   if (!matches) {
@@ -209,14 +212,30 @@ function matchTemplate(
     }
   }
 
-  return renderTemplate(template.value, namedValues, unnamedValues, language, memo);
+  return renderTemplate(template.value, namedValues, unnamedValues, language, memo, depth);
 }
 
 function countCjkCharacters(text: string) {
   return text.match(/[\u3400-\u9fff\uff00-\uffef\u3000-\u303f]/g)?.length ?? 0;
 }
 
-function localizeResidualText(text: string, language: "en", memo: Map<string, string>) {
+function isEligibleCatalogLine(text: string) {
+  const normalizedText = text.trim();
+  const looksLikeText = /[A-Za-z0-9]/.test(normalizedText)
+    || countCjkCharacters(normalizedText) >= 5;
+  return looksLikeText
+    && (
+      Object.prototype.hasOwnProperty.call(BACKEND_TEXT_EN, normalizedText)
+      || getLiteralCatalog().has(normalizedText)
+    );
+}
+
+function localizeResidualText(
+  text: string,
+  language: "en",
+  memo: Map<string, string>,
+  depth: number,
+) {
   let bestText = text;
   let bestCount = countCjkCharacters(text);
 
@@ -232,14 +251,16 @@ function localizeResidualText(text: string, language: "en", memo: Map<string, st
   if (prefixCandidate) {
     consider(
       prefixCandidate.prefix
-      + localizeBackendTextInternal(prefixCandidate.rest, language, memo),
+      + localizeBackendTextInternal(prefixCandidate.rest, language, memo, depth + 1),
     );
   }
 
   if (text.includes("\n")) {
     consider(text.split("\n").map((line) => {
-      return isNestedBackendMessage(line) || getNestedPrefixCandidate(line)
-        ? localizeBackendTextInternal(line, language, memo)
+      return isNestedBackendMessage(line)
+        || getNestedPrefixCandidate(line)
+        || isEligibleCatalogLine(line)
+        ? localizeBackendTextInternal(line, language, memo, depth + 1)
         : line;
     }).join("\n"));
   }
@@ -251,7 +272,12 @@ function localizeBackendTextInternal(
   text: string,
   language: ReturnType<typeof getBackendTextLanguage>,
   memo: Map<string, string>,
+  depth: number,
 ): string {
+  if (depth > MAX_LOCALIZATION_DEPTH) {
+    return text;
+  }
+
   if (memo.has(text)) {
     return memo.get(text)!;
   }
@@ -270,7 +296,7 @@ function localizeBackendTextInternal(
       translatedText = literalMatch;
     } else {
       for (const template of getCompiledTemplates()) {
-        const translated = matchTemplate(normalizedText, template, language, memo);
+        const translated = matchTemplate(normalizedText, template, language, memo, depth);
         if (translated !== null) {
           translatedText = translated;
           break;
@@ -285,7 +311,7 @@ function localizeBackendTextInternal(
   }
 
   let bestText = translatedText;
-  const sourceCandidate = localizeResidualText(text, language, memo);
+  const sourceCandidate = localizeResidualText(text, language, memo, depth);
   if (countCjkCharacters(sourceCandidate) < countCjkCharacters(bestText)) {
     bestText = sourceCandidate;
   }
@@ -297,5 +323,5 @@ export function localizeBackendText(
   text: string,
   language = getBackendTextLanguage(),
 ): string {
-  return localizeBackendTextInternal(text, language, new Map());
+  return localizeBackendTextInternal(text, language, new Map(), 0);
 }
