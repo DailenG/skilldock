@@ -27,7 +27,7 @@ export function CliRoute() {
   const [cliTools, setCliTools] = useState<CliToolSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
+  const [hasLoadError, setHasLoadError] = useState(false);
   const [query, setQuery] = useState("");
   const { expandedId, handleExpandedChange } = useSingleExpandedRow();
 
@@ -42,10 +42,10 @@ export function CliRoute() {
     try {
       const nextCliTools = await fetchCliTools();
       setCliTools(nextCliTools);
-      setErrorMessage("");
+      setHasLoadError(false);
     } catch (error) {
       console.warn("Failed to load CLI tools", error);
-      setErrorMessage(t("cli.error.load"));
+      setHasLoadError(true);
     } finally {
       if (isSilent) {
         setIsRefreshing(false);
@@ -63,12 +63,12 @@ export function CliRoute() {
         const nextCliTools = await fetchCliTools();
         if (!shouldIgnore) {
           setCliTools(nextCliTools);
-          setErrorMessage("");
+          setHasLoadError(false);
         }
       } catch (error) {
         console.warn("Failed to load CLI tools", error);
         if (!shouldIgnore) {
-          setErrorMessage(t("cli.error.load"));
+          setHasLoadError(true);
         }
       } finally {
         if (!shouldIgnore) {
@@ -109,7 +109,7 @@ export function CliRoute() {
       isRefreshing={isRefreshing}
       emptyTitle={t("cli.empty.title")}
       emptyDescription={t("cli.empty.description")}
-      errorMessage={errorMessage}
+      errorMessage={hasLoadError ? t("cli.error.load") : ""}
       itemsCount={filteredCliTools.length}
       loadingText={t("cli.loading")}
       refreshLabel={t("cli.refresh")}

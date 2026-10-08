@@ -49,6 +49,11 @@ describe("backend text localization", () => {
       .toBe("Failed to set GitHub credentials directory permissions: os error 13");
   });
 
+  it("preserves skill names in named placeholders", () => {
+    expect(localizeBackendText("未找到技能 已安装", "en"))
+      .toBe("Skill 已安装 was not found");
+  });
+
   it("recursively localizes nested error messages", () => {
     expect(localizeBackendText(
       "下载 ClawHub Skill 失败: 创建目录失败: 读取文件失败: os error 13",
@@ -56,6 +61,20 @@ describe("backend text localization", () => {
     )).toBe(
       "Failed to download ClawHub skill: Failed to create directory: Failed to read file: os error 13",
     );
+  });
+
+  it("recursively localizes unnamed placeholders containing full backend messages", () => {
+    expect(localizeBackendText(
+      "Git 备份命令失败: Agent CLI Skill 已更新。",
+      "en",
+    )).toBe("Git backup command failed: Agent CLI skill was updated.");
+  });
+
+  it("does not recursively localize debug placeholders", () => {
+    expect(localizeBackendText(
+      "skills 命令执行失败，退出码 Agent CLI Skill 已更新。",
+      "en",
+    )).toBe("skills command failed with exit code Agent CLI Skill 已更新。");
   });
 
   it("matches unnamed placeholders in order", () => {

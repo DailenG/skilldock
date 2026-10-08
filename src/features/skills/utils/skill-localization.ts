@@ -25,34 +25,53 @@ const GIT_ACCOUNT_STATUS_MAPPINGS: Array<[string, string]> = [
   ["已连接，可发起 PR", "Connected. Ready to open PRs."],
 ];
 
-function pickLocalizedValue(
-  value: string,
-  language: AppLanguage,
-  mappings: Array<[string, string]>,
-) {
+function localizeToEnglish(value: string, mappings: Array<[string, string]>) {
   const normalizedValue = value.trim();
   const matched = mappings.find(([chinese, english]) =>
     normalizedValue === chinese || normalizedValue === english
   );
-  if (!matched) {
-    return language === "en" ? localizeBackendText(value, "en") : value;
+  return matched?.[1] ?? localizeBackendText(value, "en");
+}
+
+function pickLocalizedValue(
+  value: string,
+  source: string | undefined,
+  language: AppLanguage,
+  mappings: Array<[string, string]>,
+): { text: string; source: string } {
+  const hasValidSource = source !== undefined
+    && (value === source || value === localizeToEnglish(source, mappings));
+  let effectiveSource = hasValidSource ? source : value;
+  const canonicalMapping = mappings.find(([, english]) => effectiveSource.trim() === english);
+  if (canonicalMapping) {
+    effectiveSource = canonicalMapping[0];
   }
 
-  return language === "en" ? matched[1] : matched[0];
+  return {
+    text: language === "en" ? localizeToEnglish(effectiveSource, mappings) : effectiveSource,
+    source: effectiveSource,
+  };
 }
 
 export function localizeSkillStatusText(statusText: string, language: AppLanguage) {
-  return pickLocalizedValue(statusText, language, SKILL_STATUS_TEXT_MAPPINGS);
+  return pickLocalizedValue(statusText, undefined, language, SKILL_STATUS_TEXT_MAPPINGS).text;
 }
 
 export function localizeGitAccountStatusLabel(statusLabel: string, language: AppLanguage) {
-  return pickLocalizedValue(statusLabel, language, GIT_ACCOUNT_STATUS_MAPPINGS);
+  return pickLocalizedValue(statusLabel, undefined, language, GIT_ACCOUNT_STATUS_MAPPINGS).text;
 }
 
 export function localizeSkillSummary(skill: SkillSummary, language: AppLanguage): SkillSummary {
+  const statusText = pickLocalizedValue(
+    skill.statusText,
+    skill.statusTextSource,
+    language,
+    SKILL_STATUS_TEXT_MAPPINGS,
+  );
   return {
     ...skill,
-    statusText: localizeSkillStatusText(skill.statusText, language),
+    statusText: statusText.text,
+    statusTextSource: statusText.source,
     tools: skill.tools.map((tool) => ({
       ...tool,
       statusLabel: localizeToolStatusLabel(tool.statusLabel, language),
@@ -79,8 +98,15 @@ export function localizeGitAccountSummary(
     return gitAccount;
   }
 
+  const statusLabel = pickLocalizedValue(
+    gitAccount.statusLabel,
+    gitAccount.statusLabelSource,
+    language,
+    GIT_ACCOUNT_STATUS_MAPPINGS,
+  );
   return {
     ...gitAccount,
-    statusLabel: localizeGitAccountStatusLabel(gitAccount.statusLabel, language),
+    statusLabel: statusLabel.text,
+    statusLabelSource: statusLabel.source,
   };
 }
