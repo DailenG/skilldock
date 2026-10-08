@@ -21,7 +21,6 @@ type CompiledTemplate = {
 
 let compiledTemplates: CompiledTemplate[] | undefined;
 let literalCatalog: Map<string, string> | undefined;
-const originalBackendTextByTranslation = new Map<string, string>();
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -122,11 +121,17 @@ function getLiteralCatalog() {
   return literalCatalog;
 }
 
-function rememberBackendTextTranslation(original: string, translated: string) {
-  if (translated !== original) {
-    originalBackendTextByTranslation.set(translated.trim(), original);
+function isNestedBackendMessage(text: string) {
+  const normalizedText = text.trim();
+  if (getCompiledTemplates().some((template) => template.regex.test(normalizedText))) {
+    return true;
   }
-  return translated;
+
+  return BACKEND_SENTENCE_PUNCTUATION.test(normalizedText)
+    && (
+      Object.prototype.hasOwnProperty.call(BACKEND_TEXT_EN, normalizedText)
+      || getLiteralCatalog().has(normalizedText)
+    );
 }
 
 function renderTemplate(
@@ -151,7 +156,7 @@ function renderTemplate(
     const shouldLocalizeCaptured = !part.debug && (part.name
       ? BACKEND_ERROR_PLACEHOLDER_NAME.test(part.name)
         || BACKEND_ERROR_PLACEHOLDER_SUFFIX.test(part.name)
-      : BACKEND_SENTENCE_PUNCTUATION.test(captured));
+      : isNestedBackendMessage(captured));
     return shouldLocalizeCaptured ? localizeBackendText(captured, language) : captured;
   }).join("");
 }
@@ -194,24 +199,20 @@ export function localizeBackendText(
   const normalizedText = text.trim();
   const exactMatch = BACKEND_TEXT_EN[normalizedText];
   if (exactMatch !== undefined) {
-    return rememberBackendTextTranslation(text, exactMatch);
+    return exactMatch;
   }
 
   const literalMatch = getLiteralCatalog().get(normalizedText);
   if (literalMatch !== undefined) {
-    return rememberBackendTextTranslation(text, literalMatch);
+    return literalMatch;
   }
 
   for (const template of getCompiledTemplates()) {
     const translated = matchTemplate(normalizedText, template, language);
     if (translated !== null) {
-      return rememberBackendTextTranslation(text, translated);
+      return translated;
     }
   }
 
   return text;
-}
-
-export function restoreBackendText(text: string): string {
-  return originalBackendTextByTranslation.get(text.trim()) ?? text;
 }
