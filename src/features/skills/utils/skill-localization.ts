@@ -4,8 +4,11 @@ import type {
   SkillSummary,
   ToolConfig,
 } from "@/features/skills/state/skill-store";
-import { localizeBackendText, restoreBackendText } from "@/app/backend-i18n/localize";
+import { localizeBackendText } from "@/app/backend-i18n/localize";
 import { localizeToolStatusLabel } from "@/features/skills/utils/tool-status";
+
+const originalStatusTextByTranslation = new Map<string, string>();
+const MAX_STATUS_TEXT_TRANSLATIONS = 500;
 
 const SKILL_STATUS_TEXT_MAPPINGS: Array<[string, string]> = [
   ["已安装到本地，可继续同步到工具。", "Installed locally. You can continue syncing it to tools."],
@@ -34,13 +37,23 @@ function pickLocalizedValue(
   const matched = mappings.find(([chinese, english]) =>
     normalizedValue === chinese || normalizedValue === english
   );
-  if (!matched) {
-    return language === "en"
-      ? localizeBackendText(value, "en")
-      : restoreBackendText(value);
+  if (language === "en") {
+    const translated = matched?.[1] ?? localizeBackendText(value, "en");
+    if (translated !== value) {
+      const key = translated.trim();
+      originalStatusTextByTranslation.delete(key);
+      originalStatusTextByTranslation.set(key, value);
+      if (originalStatusTextByTranslation.size > MAX_STATUS_TEXT_TRANSLATIONS) {
+        const oldestKey = originalStatusTextByTranslation.keys().next().value;
+        if (oldestKey !== undefined) {
+          originalStatusTextByTranslation.delete(oldestKey);
+        }
+      }
+    }
+    return translated;
   }
 
-  return language === "en" ? matched[1] : matched[0];
+  return originalStatusTextByTranslation.get(normalizedValue) ?? matched?.[0] ?? value;
 }
 
 export function localizeSkillStatusText(statusText: string, language: AppLanguage) {

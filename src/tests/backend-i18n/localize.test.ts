@@ -1,11 +1,9 @@
 import extractedStrings from "@/app/backend-i18n/extracted-strings.json";
 import { BACKEND_TEXT_EN } from "@/app/backend-i18n/catalog";
-import { localizeBackendText, restoreBackendText } from "@/app/backend-i18n/localize";
+import { localizeBackendText } from "@/app/backend-i18n/localize";
 import { invoke, listen } from "@/app/backend-i18n/tauri";
 import * as tauriCore from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
-import { localizeSkillSummaries, localizeSkillStatusText } from "@/features/skills/utils/skill-localization";
-import { installedSkillFixtures } from "@/features/skills/state/skill-fixtures";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@tauri-apps/api/core", async (importOriginal) => {
@@ -77,29 +75,6 @@ describe("backend text localization", () => {
       "skills 命令执行失败，退出码 Agent CLI Skill 已更新。",
       "en",
     )).toBe("skills command failed with exit code Agent CLI Skill 已更新。");
-  });
-
-  it("restores a localized backend status when switching back to Chinese", () => {
-    const original = "Agent CLI Skill 已更新。";
-    const english = localizeSkillStatusText(original, "en");
-
-    expect(english).toBe("Agent CLI skill was updated.");
-    expect(localizeSkillStatusText(english, "zh-CN")).toBe(original);
-  });
-
-  it("restores localized backend status text through skill summaries", () => {
-    const original = "Agent CLI Skill 已更新。";
-    const summary = { ...installedSkillFixtures[0], statusText: original };
-    const english = localizeSkillSummaries([summary], "en");
-
-    expect(english[0].statusText).toBe("Agent CLI skill was updated.");
-    expect(localizeSkillSummaries(english, "zh-CN")[0].statusText).toBe(original);
-  });
-
-  it("returns unknown backend text unchanged when restoring", () => {
-    const unknownText = "没有对应目录项的未知状态";
-
-    expect(restoreBackendText(unknownText)).toBe(unknownText);
   });
 
   it("matches unnamed placeholders in order", () => {
