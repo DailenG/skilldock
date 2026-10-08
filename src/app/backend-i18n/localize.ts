@@ -188,6 +188,60 @@ function matchTemplate(text: string, template: CompiledTemplate, language: "en")
   return renderTemplate(template.value, namedValues, unnamedValues, language);
 }
 
+function countCjkCharacters(text: string) {
+  return text.match(/[\u3400-\u9fff\uff00-\uffef\u3000-\u303f]/g)?.length ?? 0;
+}
+
+function localizeResidualText(text: string, language: "en") {
+  let bestText = text;
+  let bestCount = countCjkCharacters(text);
+
+  function consider(candidate: string) {
+    const candidateCount = countCjkCharacters(candidate);
+    if (candidateCount < bestCount) {
+      bestText = candidate;
+      bestCount = candidateCount;
+    }
+  }
+
+  const lines = text.split("\n");
+  if (text.includes("\n")) {
+    consider(lines.map((line) => localizeBackendText(line, language)).join("\n"));
+
+    consider(lines.map((line) => {
+      let bestLine = line;
+      let bestLineCount = countCjkCharacters(line);
+      let lineBoundary = line.indexOf(": ");
+      while (lineBoundary >= 0) {
+        const prefixEnd = lineBoundary + 2;
+        const prefix = line.slice(0, prefixEnd);
+        if (!CJK_PATTERN.test(prefix)) {
+          const candidate = prefix + localizeBackendText(line.slice(prefixEnd), language);
+          const candidateCount = countCjkCharacters(candidate);
+          if (candidateCount < bestLineCount) {
+            bestLine = candidate;
+            bestLineCount = candidateCount;
+          }
+        }
+        lineBoundary = line.indexOf(": ", prefixEnd);
+      }
+      return bestLine;
+    }).join("\n"));
+  }
+
+  let boundary = text.indexOf(": ");
+  while (boundary >= 0) {
+    const prefixEnd = boundary + 2;
+    const prefix = text.slice(0, prefixEnd);
+    if (!CJK_PATTERN.test(prefix)) {
+      consider(prefix + localizeBackendText(text.slice(prefixEnd), language));
+    }
+    boundary = text.indexOf(": ", prefixEnd);
+  }
+
+  return bestText;
+}
+
 export function localizeBackendText(
   text: string,
   language = getBackendTextLanguage(),
@@ -198,21 +252,32 @@ export function localizeBackendText(
 
   const normalizedText = text.trim();
   const exactMatch = BACKEND_TEXT_EN[normalizedText];
-  if (exactMatch !== undefined) {
-    return exactMatch;
-  }
-
-  const literalMatch = getLiteralCatalog().get(normalizedText);
-  if (literalMatch !== undefined) {
-    return literalMatch;
-  }
-
-  for (const template of getCompiledTemplates()) {
-    const translated = matchTemplate(normalizedText, template, language);
-    if (translated !== null) {
-      return translated;
+  let translatedText = exactMatch ?? text;
+  if (exactMatch === undefined) {
+    const literalMatch = getLiteralCatalog().get(normalizedText);
+    if (literalMatch !== undefined) {
+      translatedText = literalMatch;
+    } else {
+      for (const template of getCompiledTemplates()) {
+        const translated = matchTemplate(normalizedText, template, language);
+        if (translated !== null) {
+          translatedText = translated;
+          break;
+        }
+      }
     }
   }
 
-  return text;
+  if (!CJK_PATTERN.test(translatedText)) {
+    return translatedText;
+  }
+
+  let bestText = localizeResidualText(translatedText, language);
+  if (text.includes("\n")) {
+    const sourceCandidate = localizeResidualText(text, language);
+    if (countCjkCharacters(sourceCandidate) < countCjkCharacters(bestText)) {
+      bestText = sourceCandidate;
+    }
+  }
+  return bestText;
 }

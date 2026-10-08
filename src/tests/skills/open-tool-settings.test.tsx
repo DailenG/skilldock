@@ -53,6 +53,7 @@ afterEach(() => {
 });
 
 test("opens GitHub account settings after a rate-limited Agent CLI refresh", async () => {
+  window.localStorage.setItem("skilldock.settings.language", "zh-CN");
   vi.mocked(isTauri).mockReturnValue(true);
   vi.mocked(invoke).mockImplementation(async (command) => {
     switch (command) {
@@ -616,6 +617,22 @@ test("checks app updates from settings", async () => {
   expect(await screen.findByText("当前已经是最新版本")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "检查更新" })).toBeEnabled();
   expect(screen.queryByRole("button", { name: "下载并重启" })).not.toBeInTheDocument();
+});
+
+test("updates the idle app update status when the interface language changes", async () => {
+  window.localStorage.clear();
+  render(<App />);
+
+  await userEvent.click(screen.getByRole("button", { name: /设置/ }));
+  await userEvent.click(screen.getByLabelText("界面语言"));
+  await userEvent.click(screen.getByRole("option", { name: "English" }));
+
+  expect(screen.getByText("No update check yet")).toBeInTheDocument();
+
+  await userEvent.click(screen.getByLabelText("Interface Language"));
+  await userEvent.click(screen.getByRole("option", { name: "简体中文" }));
+
+  expect(screen.getByText("尚未检查更新")).toBeInTheDocument();
 });
 
 test("switches app update action to install when a new version is available", async () => {

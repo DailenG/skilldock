@@ -924,6 +924,48 @@ test("retries failed MCP tools discovery after page load", async () => {
   }
 });
 
+test("localizes MCP tools discovery errors when displayed in English", async () => {
+  window.localStorage.clear();
+  const workspace = await skillClient.fetchMcpWorkspace();
+  const failedWorkspace = {
+    ...workspace,
+    servers: workspace.servers.map((server) => (
+      server.id === "linear"
+        ? {
+            ...server,
+            tools: [],
+            toolsDiscoveredAt: "2026/5/10 22:39:32",
+            toolsDiscoveryError: "MCP tools 探测超时",
+          }
+        : server
+    )),
+  };
+  const fetchSpy = vi.spyOn(skillClient, "fetchMcpWorkspace").mockResolvedValue(failedWorkspace);
+  const refreshSpy = vi.spyOn(skillClient, "refreshMcpServerTools").mockResolvedValue(failedWorkspace);
+  const fixtureSpy = vi.spyOn(skillClient, "shouldUseFixtureData").mockReturnValue(false);
+
+  try {
+    render(<App />);
+
+    await userEvent.click(screen.getByRole("button", { name: /Settings|设置/ }));
+    await userEvent.click(screen.getByLabelText(/Interface Language|界面语言/));
+    await userEvent.click(screen.getByRole("option", { name: "English" }));
+    await userEvent.click(screen.getByRole("button", { name: "MCP" }));
+    await screen.findByText("linear");
+    await waitFor(() => {
+      expect(refreshSpy).toHaveBeenCalledWith("linear");
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Expand linear" }));
+
+    expect(await screen.findByText("Failed to fetch tools: MCP tools probe timed out")).toBeInTheDocument();
+  } finally {
+    fixtureSpy.mockRestore();
+    refreshSpy.mockRestore();
+    fetchSpy.mockRestore();
+  }
+});
+
 test("does not auto reprobe failed MCP tools when switching back to the MCP tab within cooldown", async () => {
   window.localStorage.clear();
   const workspace = await skillClient.fetchMcpWorkspace();

@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { BusinessError, normalizeErrorMessage } from "@/app/errors";
-import { tx } from "@/app/i18n";
+import { getCurrentTranslationLanguage, tx } from "@/app/i18n";
 import {
   detectPreferredAppLanguage,
   connectGithubToken as connectGithubTokenRequest,
@@ -642,7 +642,7 @@ export function SkillWorkspaceProvider({ children }: SkillWorkspaceProviderProps
           mcpInstallActivation: "apply-all-tools",
           skillSourceViewStyle: readStoredSkillSourceViewStyle(),
           skillTagFilterLayout: DEFAULT_SKILL_TAG_FILTER_LAYOUT,
-          language: "zh-CN",
+          language: getCurrentTranslationLanguage(),
           languageSource: "auto",
           theme: readStoredAppTheme(),
         },

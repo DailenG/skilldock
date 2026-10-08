@@ -7,7 +7,7 @@ import {
 } from "@/features/app-update/AppUpdateAutoPrompt";
 import { checkForAppUpdate } from "@/features/app-update/app-update-client";
 
-const reportFailureMock = vi.hoisted(() => vi.fn());
+const translationState = vi.hoisted(() => ({ language: "zh-CN" }));
 
 vi.mock("@/features/app-update/app-update-client", () => ({
   checkForAppUpdate: vi.fn(),
@@ -18,27 +18,35 @@ vi.mock("@/app/i18n", async () => {
   return {
     ...actual,
     useTranslate: () => ({
-      language: "zh-CN",
+      language: translationState.language as "zh-CN" | "en",
       t: (key: string) => {
-        const map: Record<string, string> = {
-          "updates.popover.aria": "软件更新",
-          "updates.installing": "正在下载并安装更新...",
-          "updates.installFailed": "安装更新失败",
+        const map: Record<string, Record<string, string>> = {
+          "zh-CN": {
+            "updates.popover.aria": "软件更新",
+            "updates.installing": "正在下载并安装更新...",
+            "updates.installFailed": "安装更新失败",
+            "updates.autoCheckFailed": "自动检查更新失败",
+            "mcp.feedback.action": "反馈",
+          },
+          en: {
+            "updates.popover.aria": "App updates",
+            "updates.installing": "Installing update...",
+            "updates.installFailed": "Update installation failed",
+            "updates.autoCheckFailed": "Automatic update check failed",
+            "mcp.feedback.action": "Feedback",
+          },
         };
-        return map[key] ?? key;
+        return map[translationState.language]?.[key] ?? key;
       },
     }),
   };
 });
 
-vi.mock("@/app/failure-feedback", () => ({
-  useFailureReporter: () => reportFailureMock,
-}));
-
 afterEach(() => {
   vi.useRealTimers();
   vi.clearAllMocks();
   resetAutoUpdatePromptStateForTests();
+  translationState.language = "zh-CN";
 });
 
 test("shows an in-app prompt and installs when automatic update check finds a new version", async () => {
@@ -202,19 +210,42 @@ test("reports when automatic update check cannot reach the updater endpoint", as
     await vi.advanceTimersByTimeAsync(2000);
   });
 
-  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(screen.getByRole("alert")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Update" })).not.toBeInTheDocument();
   expect(warnSpy).toHaveBeenCalledWith(
     "Automatic app update check failed",
     expect.any(Error),
   );
-  expect(reportFailureMock).toHaveBeenCalledWith(
-    expect.any(Error),
-    {
-      operation: "auto_check_for_app_update",
-      fallbackMessage: "updates.autoCheckFailed",
-    },
+  expect(screen.getByRole("button", { name: "反馈" })).toBeInTheDocument();
+
+  view.unmount();
+  warnSpy.mockRestore();
+});
+
+test("uses the latest language for automatic update failure feedback", async () => {
+  vi.useFakeTimers();
+  vi.mocked(checkForAppUpdate).mockRejectedValue(new Error("network unavailable"));
+  const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  translationState.language = "zh-CN";
+
+  const view = render(
+    <NotificationProvider>
+      <AppUpdateAutoPrompt />
+    </NotificationProvider>,
   );
+
+  translationState.language = "en";
+  view.rerender(
+    <NotificationProvider>
+      <AppUpdateAutoPrompt />
+    </NotificationProvider>,
+  );
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2000);
+  });
+
+  expect(screen.getByRole("button", { name: "Feedback" })).toBeInTheDocument();
 
   view.unmount();
   warnSpy.mockRestore();
