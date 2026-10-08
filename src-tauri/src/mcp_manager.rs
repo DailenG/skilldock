@@ -885,10 +885,19 @@ pub async fn import_mcp_servers_from_apps(app_handle: AppHandle) -> Result<usize
 pub async fn upsert_mcp_server(server: McpServerRecord) -> Result<McpWorkspaceSnapshot, String> {
     validate_mcp_server(&server.id, &server.server)?;
     let mut records = load_mcp_records()?;
+    let previous_record = records.iter().find(|item| item.id == server.id).cloned();
+    let mut server = server;
+    if let Some(previous) = previous_record.as_ref() {
+        if is_generated_mcp_description(previous, &server.description) {
+            server.description.clear();
+        }
+    }
     let mut normalized = normalize_record(server)?;
-    if let Some(previous) = records.iter().find(|item| item.id == normalized.id) {
+    if let Some(previous) = previous_record.as_ref() {
         if normalized.description.trim().is_empty() {
-            normalized.description = previous.description.clone();
+            if !is_generated_mcp_description(previous, &previous.description) {
+                normalized.description = previous.description.clone();
+            }
         }
         if normalized.source_url.trim().is_empty() {
             normalized.source_url = previous.source_url.clone();
@@ -3121,6 +3130,10 @@ fn upsert_imported_record_basic(
     let was_created = existing_index.is_none();
     let previous_record = existing_index.and_then(|index| records.get(index).cloned());
     let mut next_record = if let Some(previous) = previous_record.clone() {
+        let mut description = previous.description.clone();
+        if is_generated_mcp_description(&previous, &description) {
+            description.clear();
+        }
         let is_managed = previous.managed_app_ids.iter().any(|item| item == app.id)
             || previous
                 .pending_sync_app_ids
@@ -3138,7 +3151,7 @@ fn upsert_imported_record_basic(
             id: previous.id,
             name: previous.name,
             server,
-            description: previous.description,
+            description,
             source_url: previous.source_url,
             enabled_app_ids,
             imported_from_app_ids,
@@ -5611,6 +5624,9 @@ pub fn apply_portable_mcp_state(input: &PortableMcpState, overwrite: bool) -> Re
                     .required_secrets
                     .iter()
                     .find(|requirement| requirement.server_id == record.id);
+                if is_generated_mcp_description(&record, &record.description) {
+                    record.description.clear();
+                }
                 record.server = preserve_local_mcp_exclusions(
                     &record.server,
                     &current_record.server,
@@ -7556,6 +7572,51 @@ A comprehensive GitLab MCP server for AI clients. Manage projects, merge request
         assert_eq!(
             records[0].imported_from_app_ids,
             vec![APP_CODEX.to_string()]
+        );
+    }
+
+    #[test]
+    fn imported_upsert_clears_stale_generated_description_and_preserves_user_text() {
+        let app = supported_app_spec(
+            APP_CODEX,
+            "Codex",
+            PathBuf::from("/tmp/codex/config.toml"),
+            PathBuf::from("/tmp/codex"),
+        );
+        let old_server = json!({
+            "type": "http",
+            "url": "https://old.example/mcp"
+        });
+        let new_server = json!({
+            "type": "http",
+            "url": "https://new.example/mcp"
+        });
+
+        let mut generated_record =
+            opencode_test_record("remote", vec![APP_CODEX.to_string()], vec![APP_CODEX.to_string()]);
+        generated_record.server = old_server.clone();
+        generated_record.description =
+            "连接到 https://old.example/mcp 的远程 HTTP MCP 服务。".to_string();
+        let mut generated_records = vec![generated_record];
+        upsert_imported_record_basic(
+            &mut generated_records,
+            "remote",
+            &app,
+            new_server.clone(),
+        )
+        .expect("re-import generated MCP description");
+        assert!(generated_records[0].description.is_empty());
+
+        let mut user_record =
+            opencode_test_record("remote", vec![APP_CODEX.to_string()], vec![APP_CODEX.to_string()]);
+        user_record.server = old_server;
+        user_record.description = "User-provided remote MCP description".to_string();
+        let mut user_records = vec![user_record];
+        upsert_imported_record_basic(&mut user_records, "remote", &app, new_server)
+            .expect("re-import user-described MCP server");
+        assert_eq!(
+            user_records[0].description,
+            "User-provided remote MCP description"
         );
     }
 
