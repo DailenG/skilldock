@@ -1,0 +1,129 @@
+# GITHUB_TOKEN releases do not trigger upstream's release: published workflow; macOS is skipped without Apple signing secrets.
+name: Release (fork)
+
+on:
+  workflow_dispatch:
+    inputs:
+      fork_revision:
+        description: Fork-only release revision
+        required: true
+        default: "1"
+        type: string
+      source_ref:
+        description: Branch, tag, or commit to build
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-fork
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source_ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2.9.1
+        with:
+          workspaces: "./src-tauri -> target"
+          shared-key: fork-x86_64-pc-windows-msvc
+
+      - name: Install dependencies
+        run: npm ci --prefer-offline --no-audit --no-fund
+        shell: bash
+
+      - name: Verify fork release version
+        id: release_version
+        env:
+          FORK_REVISION: ${{ inputs.fork_revision }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$FORK_REVISION" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::fork_revision must be a positive integer without leading zeroes"
+            exit 1
+          fi
+
+          package_version="$(node -p 'require("./package.json").version')"
+          tauri_version="$(node -p 'require("./src-tauri/tauri.conf.json").version')"
+          cargo_version="$(awk -F' = ' '/^version = / { gsub(/"/, "", $2); print $2; exit }' src-tauri/Cargo.toml)"
+
+          [[ "$package_version" == "$tauri_version" ]] || {
+            echo "package.json and tauri.conf.json versions differ" >&2
+            exit 1
+          }
+          [[ "$package_version" == "$cargo_version" ]] || {
+            echo "package.json and Cargo.toml versions differ" >&2
+            exit 1
+          }
+
+          version="${package_version}-fork.${FORK_REVISION}"
+          tag="v${version}"
+          sha="$(git rev-parse HEAD)"
+
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release tag $tag already exists in $GITHUB_REPOSITORY"
+            exit 1
+          fi
+
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "sha=$sha"
+            echo "package_version=$package_version"
+          } >> "$GITHUB_OUTPUT"
+        shell: bash
+
+      - name: Verify Tauri signing key
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY is empty. Configure repository secrets at https://github.com/${GITHUB_REPOSITORY}/settings/secrets/actions"
+            exit 1
+          fi
+        shell: bash
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          owner: ${{ github.repository_owner }}
+          repo: ${{ github.event.repository.name }}
+          tagName: ${{ steps.release_version.outputs.tag }}
+          releaseCommitish: ${{ steps.release_version.outputs.sha }}
+          releaseName: SkillDock v${{ steps.release_version.outputs.version }}
+          releaseBody: >-
+            DailenG fork build of upstream SkillDock
+            ${{ steps.release_version.outputs.package_version }}
+            at ${{ steps.release_version.outputs.sha }}. Windows x64 only.
+          releaseDraft: false
+          prerelease: false
+          updaterJsonPreferNsis: true
+          args: >-
+            --target x86_64-pc-windows-msvc
+            --bundles nsis
+            --config src-tauri/tauri.windows.conf.json
+            --config src-tauri/tauri.fork.conf.json
+            --config '{"version":"${{ steps.release_version.outputs.version }}","bundle":{"createUpdaterArtifacts":true}}'
