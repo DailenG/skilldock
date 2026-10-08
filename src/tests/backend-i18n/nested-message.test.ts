@@ -41,6 +41,25 @@ it("localizes the runtime clone failure with a header and one HTTP line", () => 
   ].join("\n"));
 });
 
+it("preserves an identifier captured by a catalog template during residual localization", () => {
+  expect(localizeBackendText("Skill 标签落盘校验失败: 已安装", "en"))
+    .toBe("Skill tag write verification failed: 已安装");
+});
+
+it("keeps a bare identifier line verbatim in multiline residual localization", () => {
+  expect(localizeBackendText(
+    "Skill 标签落盘校验失败: 已安装\n已安装",
+    "en",
+  )).toBe("Skill tag write verification failed: 已安装\n已安装");
+});
+
+it("localizes nested read failures beyond the former recursion limit", () => {
+  const source = "读取文件失败: ".repeat(20) + "permission denied";
+  const expected = "Failed to read file: ".repeat(20) + "permission denied";
+
+  expect(localizeBackendText(source, "en")).toBe(expected);
+});
+
 it("keeps unknown CJK text unchanged without scanning every ASCII prefix", () => {
   const message = "a: b: c: d: e: f: g: h: i: j: k: l: 未知中文";
   const execSpy = vi.spyOn(RegExp.prototype, "exec");

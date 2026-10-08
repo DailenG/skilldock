@@ -6,7 +6,6 @@ const BACKEND_ERROR_PLACEHOLDER_NAME = /^(?:e|err|error|reason|message|msg|detai
 const BACKEND_ERROR_PLACEHOLDER_SUFFIX = /_(?:error|err|message|reason|detail)$/i;
 const BACKEND_SENTENCE_PUNCTUATION = /[。！？；：，]/;
 const PLACEHOLDER_CONTENT = /^(?:[A-Za-z_][A-Za-z0-9_]*(?::[^{}]*)?|[0-9]+(?::[^{}]*)?|:[^{}]*|)$/;
-const MAX_LOCALIZATION_DEPTH = 6;
 
 type TemplatePart =
   | { type: "literal"; value: string }
@@ -135,12 +134,28 @@ function isNestedBackendMessage(text: string) {
     );
 }
 
+function getNestedPrefixCandidate(text: string) {
+  const firstCjkIndex = text.search(CJK_PATTERN);
+  const boundary = firstCjkIndex >= 0
+    ? text.lastIndexOf(": ", firstCjkIndex)
+    : -1;
+  if (boundary < 0) {
+    return null;
+  }
+
+  const prefixEnd = boundary + 2;
+  const rest = text.slice(prefixEnd);
+  return isNestedBackendMessage(rest)
+    ? { prefix: text.slice(0, prefixEnd), rest }
+    : null;
+}
+
 function renderTemplate(
   template: string,
   namedValues: Map<string, string[]>,
   unnamedValues: string[],
   language: "en",
-  depth: number,
+  memo: Map<string, string>,
 ) {
   let unnamedIndex = 0;
   return parseTemplate(template).map((part) => {
@@ -159,8 +174,8 @@ function renderTemplate(
       ? BACKEND_ERROR_PLACEHOLDER_NAME.test(part.name)
         || BACKEND_ERROR_PLACEHOLDER_SUFFIX.test(part.name)
       : isNestedBackendMessage(captured));
-    return shouldLocalizeCaptured && depth < MAX_LOCALIZATION_DEPTH
-      ? localizeBackendTextInternal(captured, language, depth + 1)
+    return shouldLocalizeCaptured
+      ? localizeBackendTextInternal(captured, language, memo)
       : captured;
   }).join("");
 }
@@ -169,7 +184,7 @@ function matchTemplate(
   text: string,
   template: CompiledTemplate,
   language: "en",
-  depth: number,
+  memo: Map<string, string>,
 ) {
   const matches = template.regex.exec(text);
   if (!matches) {
@@ -194,14 +209,14 @@ function matchTemplate(
     }
   }
 
-  return renderTemplate(template.value, namedValues, unnamedValues, language, depth);
+  return renderTemplate(template.value, namedValues, unnamedValues, language, memo);
 }
 
 function countCjkCharacters(text: string) {
   return text.match(/[\u3400-\u9fff\uff00-\uffef\u3000-\u303f]/g)?.length ?? 0;
 }
 
-function localizeResidualText(text: string, language: "en", depth: number) {
+function localizeResidualText(text: string, language: "en", memo: Map<string, string>) {
   let bestText = text;
   let bestCount = countCjkCharacters(text);
 
@@ -213,22 +228,20 @@ function localizeResidualText(text: string, language: "en", depth: number) {
     }
   }
 
-  const firstCjkIndex = text.search(CJK_PATTERN);
-  const prefixBoundary = firstCjkIndex >= 0
-    ? text.lastIndexOf(": ", firstCjkIndex)
-    : -1;
-  if (prefixBoundary >= 0) {
-    const prefixEnd = prefixBoundary + 2;
+  const prefixCandidate = getNestedPrefixCandidate(text);
+  if (prefixCandidate) {
     consider(
-      text.slice(0, prefixEnd)
-      + localizeBackendTextInternal(text.slice(prefixEnd), language, depth),
+      prefixCandidate.prefix
+      + localizeBackendTextInternal(prefixCandidate.rest, language, memo),
     );
   }
 
   if (text.includes("\n")) {
-    consider(text.split("\n")
-      .map((line) => localizeBackendTextInternal(line, language, depth))
-      .join("\n"));
+    consider(text.split("\n").map((line) => {
+      return isNestedBackendMessage(line) || getNestedPrefixCandidate(line)
+        ? localizeBackendTextInternal(line, language, memo)
+        : line;
+    }).join("\n"));
   }
 
   return bestText;
@@ -237,9 +250,14 @@ function localizeResidualText(text: string, language: "en", depth: number) {
 function localizeBackendTextInternal(
   text: string,
   language: ReturnType<typeof getBackendTextLanguage>,
-  depth: number,
+  memo: Map<string, string>,
 ): string {
+  if (memo.has(text)) {
+    return memo.get(text)!;
+  }
+
   if (language !== "en" || !CJK_PATTERN.test(text)) {
+    memo.set(text, text);
     return text;
   }
 
@@ -252,7 +270,7 @@ function localizeBackendTextInternal(
       translatedText = literalMatch;
     } else {
       for (const template of getCompiledTemplates()) {
-        const translated = matchTemplate(normalizedText, template, language, depth);
+        const translated = matchTemplate(normalizedText, template, language, memo);
         if (translated !== null) {
           translatedText = translated;
           break;
@@ -262,18 +280,16 @@ function localizeBackendTextInternal(
   }
 
   if (!CJK_PATTERN.test(translatedText)) {
+    memo.set(text, translatedText);
     return translatedText;
   }
 
-  if (depth >= MAX_LOCALIZATION_DEPTH) {
-    return translatedText;
-  }
-
-  let bestText = localizeResidualText(translatedText, language, depth + 1);
-  const sourceCandidate = localizeResidualText(text, language, depth + 1);
+  let bestText = translatedText;
+  const sourceCandidate = localizeResidualText(text, language, memo);
   if (countCjkCharacters(sourceCandidate) < countCjkCharacters(bestText)) {
     bestText = sourceCandidate;
   }
+  memo.set(text, bestText);
   return bestText;
 }
 
@@ -281,5 +297,5 @@ export function localizeBackendText(
   text: string,
   language = getBackendTextLanguage(),
 ): string {
-  return localizeBackendTextInternal(text, language, 0);
+  return localizeBackendTextInternal(text, language, new Map());
 }
