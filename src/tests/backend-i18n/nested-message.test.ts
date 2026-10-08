@@ -1,5 +1,5 @@
 import { localizeBackendText } from "@/app/backend-i18n/localize";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 
 it("recursively localizes nested catalog templates without sentence punctuation", () => {
   expect(localizeBackendText(
@@ -20,4 +20,16 @@ it("localizes nested clone failures across lines and ASCII prefixes", () => {
     "HTTP /does/not/exist.git: Repository clone failed: fatal: repository not found",
     "SSH git@github.com:owner/repo.git: Repository clone failed: fatal: Could not read from remote repository.",
   ].join("\n"));
+});
+
+it("keeps unknown CJK text unchanged without scanning every ASCII prefix", () => {
+  const message = "a: b: c: d: e: f: g: h: i: j: k: l: 未知中文";
+  const execSpy = vi.spyOn(RegExp.prototype, "exec");
+
+  try {
+    expect(localizeBackendText(message, "en")).toBe(message);
+    expect(execSpy.mock.calls.length).toBeLessThan(5000);
+  } finally {
+    execSpy.mockRestore();
+  }
 });
