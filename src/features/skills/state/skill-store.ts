@@ -164,7 +164,6 @@ export type SkillSummary = {
   branch: string;
   collabStatus: SkillCollabStatus;
   statusText: string;
-  statusTextSource?: string;
   remoteUpdatedAt: string;
   localUpdatedAt: string;
   lastCheckedAt: string;
@@ -359,7 +358,6 @@ export type GitAccountSummary = {
   provider: string;
   accountName: string;
   statusLabel: string;
-  statusLabelSource?: string;
 };
 
 export type InstallActivationMode = "apply-all-tools" | "disable-all-tools";
