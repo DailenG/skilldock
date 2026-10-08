@@ -4,7 +4,7 @@ import type {
   SkillSummary,
   ToolConfig,
 } from "@/features/skills/state/skill-store";
-import { localizeBackendText } from "@/app/backend-i18n/localize";
+import { localizeBackendText, restoreBackendText } from "@/app/backend-i18n/localize";
 import { localizeToolStatusLabel } from "@/features/skills/utils/tool-status";
 
 const SKILL_STATUS_TEXT_MAPPINGS: Array<[string, string]> = [
@@ -35,7 +35,9 @@ function pickLocalizedValue(
     normalizedValue === chinese || normalizedValue === english
   );
   if (!matched) {
-    return language === "en" ? localizeBackendText(value, "en") : value;
+    return language === "en"
+      ? localizeBackendText(value, "en")
+      : restoreBackendText(value);
   }
 
   return language === "en" ? matched[1] : matched[0];

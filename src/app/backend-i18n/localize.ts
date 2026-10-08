@@ -2,11 +2,14 @@ import { BACKEND_TEXT_EN } from "./catalog";
 import { getBackendTextLanguage } from "./language";
 
 const CJK_PATTERN = /[\u3400-\u9fff\uff00-\uffef\u3000-\u303f]/;
+const BACKEND_ERROR_PLACEHOLDER_NAME = /^(?:e|err|error|reason|message|msg|detail|details|cause)$/i;
+const BACKEND_ERROR_PLACEHOLDER_SUFFIX = /_(?:error|err|message|reason|detail)$/i;
+const BACKEND_SENTENCE_PUNCTUATION = /[。！？；：，]/;
 const PLACEHOLDER_CONTENT = /^(?:[A-Za-z_][A-Za-z0-9_]*(?::[^{}]*)?|[0-9]+(?::[^{}]*)?|:[^{}]*|)$/;
 
 type TemplatePart =
   | { type: "literal"; value: string }
-  | { type: "placeholder"; value: string; name?: string };
+  | { type: "placeholder"; value: string; name?: string; debug: boolean };
 
 type CompiledTemplate = {
   key: string;
@@ -18,6 +21,7 @@ type CompiledTemplate = {
 
 let compiledTemplates: CompiledTemplate[] | undefined;
 let literalCatalog: Map<string, string> | undefined;
+const originalBackendTextByTranslation = new Map<string, string>();
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -52,6 +56,7 @@ function parseTemplate(template: string): TemplatePart[] {
             type: "placeholder",
             value: template.slice(index, end + 1),
             ...(name ? { name } : {}),
+            debug: /:#?\?$/.test(content),
           });
           index = end + 1;
           continue;
@@ -117,6 +122,13 @@ function getLiteralCatalog() {
   return literalCatalog;
 }
 
+function rememberBackendTextTranslation(original: string, translated: string) {
+  if (translated !== original) {
+    originalBackendTextByTranslation.set(translated.trim(), original);
+  }
+  return translated;
+}
+
 function renderTemplate(
   template: string,
   namedValues: Map<string, string[]>,
@@ -132,7 +144,15 @@ function renderTemplate(
     const captured = part.name
       ? namedValues.get(part.name)?.shift()
       : unnamedValues[unnamedIndex++];
-    return captured === undefined ? part.value : localizeBackendText(captured, language);
+    if (captured === undefined) {
+      return part.value;
+    }
+
+    const shouldLocalizeCaptured = !part.debug && (part.name
+      ? BACKEND_ERROR_PLACEHOLDER_NAME.test(part.name)
+        || BACKEND_ERROR_PLACEHOLDER_SUFFIX.test(part.name)
+      : BACKEND_SENTENCE_PUNCTUATION.test(captured));
+    return shouldLocalizeCaptured ? localizeBackendText(captured, language) : captured;
   }).join("");
 }
 
@@ -174,20 +194,24 @@ export function localizeBackendText(
   const normalizedText = text.trim();
   const exactMatch = BACKEND_TEXT_EN[normalizedText];
   if (exactMatch !== undefined) {
-    return exactMatch;
+    return rememberBackendTextTranslation(text, exactMatch);
   }
 
   const literalMatch = getLiteralCatalog().get(normalizedText);
   if (literalMatch !== undefined) {
-    return literalMatch;
+    return rememberBackendTextTranslation(text, literalMatch);
   }
 
   for (const template of getCompiledTemplates()) {
     const translated = matchTemplate(normalizedText, template, language);
     if (translated !== null) {
-      return translated;
+      return rememberBackendTextTranslation(text, translated);
     }
   }
 
   return text;
+}
+
+export function restoreBackendText(text: string): string {
+  return originalBackendTextByTranslation.get(text.trim()) ?? text;
 }
