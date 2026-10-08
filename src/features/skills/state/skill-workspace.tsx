@@ -390,7 +390,7 @@ function mergeRefreshedSkillsPreservingTags(
   });
 }
 
-function mergeLocalGitStates(
+export function mergeLocalGitStates(
   currentSkills: SkillSummary[],
   refreshedSkills: SkillSummary[],
 ) {
@@ -407,6 +407,7 @@ function mergeLocalGitStates(
       branch: refreshedSkill.branch,
       collabStatus: refreshedSkill.collabStatus,
       statusText: refreshedSkill.statusText,
+      statusTextSource: refreshedSkill.statusTextSource,
       localUpdatedAt: refreshedSkill.localUpdatedAt,
       lastCheckedAt: refreshedSkill.lastCheckedAt,
       commitLabel: refreshedSkill.commitLabel,
@@ -583,6 +584,7 @@ export function mergeStartupSkillStatusCache(
       branch: cachedSkill.branch,
       collabStatus: cachedSkill.collabStatus,
       statusText: cachedSkill.statusText,
+      statusTextSource: cachedSkill.statusTextSource,
       remoteUpdatedAt: cachedSkill.remoteUpdatedAt,
       localUpdatedAt: cachedSkill.localUpdatedAt,
       lastCheckedAt: cachedSkill.lastCheckedAt,
