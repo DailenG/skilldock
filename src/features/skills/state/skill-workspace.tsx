@@ -479,6 +479,7 @@ function normalizeCachedSkillSummary(skill: CachedSkillSummary): SkillSummary {
     branch: skill.branch ?? "",
     collabStatus: skill.collabStatus ?? "clean",
     statusText: skill.statusText ?? "",
+    statusTextSource: skill.statusTextSource,
     remoteUpdatedAt: skill.remoteUpdatedAt ?? skill.lastSyncedAt ?? normalizedUpdatedAt,
     localUpdatedAt: skill.localUpdatedAt ?? skill.lastSyncedAt ?? normalizedUpdatedAt,
     lastCheckedAt: skill.lastCheckedAt ?? "",
